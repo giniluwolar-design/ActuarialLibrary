@@ -1,0 +1,71 @@
+# Current handover
+
+## Objective
+
+Use the Wayfinder process to produce a decision-complete product and architecture blueprint for an open-source Actuarial Workbench. The first public milestone contains three bounded professional workflows: P&C reserving, triangle-derived reserving cash-flow projection, and annuity-factor calculation. Preserve the separate person-level prototype for later work.
+
+## Current state
+
+- Implementation start, 7 October 2026: founder authorizes continuing the agreed implementation and requests mobile updates/uninterrupted work. Cloud development was offered as the recommended execution mode; founder replied yes and the lead proceeds on that basis. See `CLOUD_IMPLEMENTATION.md` for scope and continuation. Native cheaper workers now own disjoint new graph, projection and discounting modules/tests; lead owns API/UI integration. Baseline tests freshly pass: 33 tests, 123 dependency deprecation warnings. Cloud task creation remains pending reviewed source publication; no claim of running cloud work yet.
+- Public-source review, 7 October 2026: three bundled demo tables match deterministic seeded regeneration; workbook's 41,322 Data-sheet rows match the synthetic annual snapshots. Workbook has no formula-error cells, VBA/external-link/connection parts. This validates public content/structure, not a new native Excel recalculation. Source credential-pattern scan found no matches; ignore checks cover private/runtime/environment/cache paths. Removed private local session/job identifiers and personal machine paths from public review history. Existing hosting metadata contains only the preserved dist prototype's project identifier/static path; publication does not invoke deployment or change the binding.
+- Operating arrangement, 7 October 2026: founder requests lead-led design/orchestration/review, cheaper Codex implementation workers and a PM for progress updates (F010). Lead started a native `gpt-6-luna` PM subagent with a short read-only assignment; it completed an inventory confirming the existing foundation and absent new engines. PM reports evidence; lead assigns and integrates work. Use narrowly scoped cheaper Codex workers for implementation, escalating difficult actuarial/architecture decisions to the lead. This supersedes the earlier PM-owned assignment/dispatch arrangement below for new work. Existing Herdr panes were not changed. Session subagents do not establish scheduled background execution. No implementation workers were started for this request.
+- Live checks, 7 October 2026: `gh api user` confirmed `giniluwolar-design`; repository API confirmed public `giniluwolar-design/ActuarialLibrary` and ADMIN permission, with no named default branch. Issues #1 and #4–#13 remain open. Most application files remain untracked; the five tracked files are the separate cash-flow prototype and its hosting metadata. No startup, browser, numerical or model tests were rerun. No listener on app port 8765 was found by the local process check; 5 October startup evidence is historical.
+- Live check, 5 October 2026: restarted the current browser app in existing Herdr preview pane `w3:p4` with `.venv/bin/python scripts/run_workspace.py`. `http://127.0.0.1:8765/api/health`, `/`, `/web/app.js` and `/web/styles.css` returned HTTP 200; health reported local Ollama reachable. These are startup/HTTP checks, not fresh numerical, browser-interaction or model-reliability certification. PM OpenCode agent in `w3:p2` was idle; its history records interrupted GLM connection failures. A read-only status request was submitted and working activity observed; its current model label is DeepSeek V4.1 Flash Nvidia, high. A bounded 45-second wait expired without a response; the request remains running. Wave 3 panes `w3:pA` through `w3:pE` currently contain foreground zsh shells, not running implementation agents. No new graph/projection/discount/mortality-factor modules are present in `src/actuarial_library/`. Next check: read PM's response with `herdr agent get w3:p2` and `herdr agent read w3:p2 --source recent-unwrapped --lines 160` when idle; review it against these live facts before resuming implementation.
+- Evidence drill-down prototype is inspectable at `http://127.0.0.1:8080` while its loopback server runs; sources in `prototype/evidence-drilldown/`. Lead repaired runtime/fixture defects and exercised desktop/mobile Chrome interactions on 27 September; `browser-smoke.cjs` records regression coverage. Synthetic fixture only, not integrated or a numerical trace. Wave 3 workers own separate graph/projection/discount/mortality-factor modules; one integration owner controls server/web changes.
+- The deterministic reserving library, Streamlit workflow, local browser reserving workspace, and separate `dist/` cash-flow prototype exist.
+- The checkout is on `main` at `e62a1e9` and is connected to `https://github.com/giniluwolar-design/ActuarialLibrary.git` as `origin`. The remote has no refs.
+- Most project files are untracked. Inventory and review them before the first commit or push.
+- Preview started 27 September in Herdr pane `w3:p4` (Workbench preview) using `.venv/bin/python scripts/run_workspace.py`; URL `http://127.0.0.1:8765`. Health, HTML/JS/CSS delivery and creation of a 20-origin synthetic Liability workspace at 31 December 2025 returned HTTP 200. This preview still uses the existing 2025 demo; Q2 2026 cash-flow/factor and graph screens are pending. Recheck process state in later sessions; no fresh browser-render or model-reliability certification is implied.
+- OpenCode `v2.0.14` is installed with local and hosted model choices. Delegated output requires review before integration.
+- Herdr `v0.9.1` is running this checkout as workspace `w3`. Its Codex and OpenCode integrations are current. The visible OpenCode pane `w3:p2` is named `project_manager` and has been given a read-only initial portfolio-review brief.
+- GitHub CLI `v2.101.0` is installed at `~/.local/bin/gh` and authenticated as `giniluwolar-design`.
+- The canonical Wayfinder map is GitHub issue #1: `https://github.com/giniluwolar-design/ActuarialLibrary/issues/1`.
+
+## Decisions made on 25 September 2026
+
+- **Actuarial Workbench** is the user-facing product; **Actuarial Library** is its deterministic calculation layer.
+- The first public release includes reserving, cash-flow generation, and annuity-factor workflows in one common workbench.
+- Each tool must provide a bounded end-to-end professional workflow and meet the same transparency and validation standard.
+- The initial operating boundary is single-user, local-first, with no silent cloud fallback, hosted tracing, account, or telemetry.
+- One visible analyst may inspect, explain, compare labelled scenarios, and create artifacts through deterministic tool APIs. A future guided path may run a model and explain its output without removing direct access to the tool.
+- GitHub is the issue tracker. Default triage labels are accepted. Development uses issues, branches, pull requests, and later a protected `main`.
+- Lightweight agents may perform bounded routine work. Strong reasoning reviews actuarial semantics, architecture, security, integration, and look and feel.
+- Herdr is the visible agent control plane. GitHub issues and this handover remain the durable project state; an agent pane is not itself project memory. Hosted OpenCode models may receive non-private repository source, documentation and GitHub issue content, but must never receive `local_runs/`, `data/private/`, credentials, secrets or raw claims data.
+- A material result should open into a visual, linked evidence experience spanning structured data, unstructured sources, assumptions, calculations, controls, and explanations.
+- Reserving cash flows are projected from the selected outstanding reserve using the paid development pattern. Quarterly cash flows require quarterly observations or an explicit external pattern.
+- Discounting defaults to the 30 June 2026 basic EUR EIOPA curve without VA; using the VA curve is an explicit option with its exact source and adjustment recorded.
+- AG2024 is the as-known-at-30-June-2026 mortality basis. AG2026 is available only as a labelled retrospective scenario for that reporting date.
+- Annuity factors start with regular and partner benefits, annual/monthly frequency, primo/ultimo timing, and adjustable unisex weights defaulting to 50% male and 50% female.
+
+## Unfinished Wayfinder work
+
+- Wave 2 reviewed 27 September: `docs/project/review-2026-09-27-wave2-verdict.md`. Lead directly corrected graph, projection, annuity, AG ingestion and discounting documents. Bounded implementation now authorized, including synthetic finite-horizon factors. Existing 33-pass reports do not validate these new engines. Prior contradictory draft wording is superseded.
+- Wave 1 reviewed on 27 September: `docs/project/review-2026-09-27-wave1-verdict.md` supersedes conflicting recommendations in the original draft. #4/#6/#9 accepted with revisions; #8 calculation specification rejected pending rewrite. These are design verdicts, not verified implementations or closed tickets.
+- Factor-space mixing and adjustable unisex per-life weights are selected for development. #8 must correct calendar dates, annual benefit normalization, attained-age treatment and terminal handling. A labelled finite-horizon calculation may be developed; whole-life closure requires explicit assumptions and sensitivity evidence.
+- Continue through the dependency graph to the prototypes, shared architecture, analyst contract, EIOPA discounting conventions and release gates.
+- First-commit categories conditionally approved; exact manifest/staged-content review remains. All three demo tables matched deterministic regeneration. Fixed node_modules symlink/.scratch/environment/SQLite ignores. Curated workbook retained; public-content and deployment-binding review remain before push.
+- PM is assigned revised contracts, #5 synthetic drill-down prototype, #7 discounting research and an exact inventory. Numerical implementation and ticket closure still require matching review evidence. AG storage/export rights remain a source-rights release gate, not an assumed permission.
+
+## Exact next action
+
+Lead reviews the current untracked inventory and corrected Evidence Graph contract, then assigns the first bounded result-to-evidence implementation slice with explicit file ownership and acceptance checks. PM reports implemented, verified, blocked and next state from evidence. Continue against `docs/project/review-2026-09-27-wave2-verdict.md`; first visible integration remains result-to-evidence drill-down. #10 is not declared complete by these reviews. Exact staged-content/publication review remains required before a first push.
+
+## Project overview protocol
+
+The project manager reports in this order: **decided**, **implemented**, **verified**, **blocked**, and **next assignment**. A status is not considered implemented merely because an agent proposed code, and it is not considered verified until the relevant numerical, integration, model and visual checks are named. The lead Codex agent owns integration and strong-model review; the founder remains the decision-maker for unresolved product and actuarial conventions. GitHub issue state is the live delivery map when it can be reached; this handover is the portable fallback when a session or provider is unavailable.
+
+## Project-manager autonomy and monitoring
+
+While the Herdr session is alive, the project manager should continue through bounded, issue-linked work without waiting for the founder after every routine question. It may decide ordinary implementation details, choose a suitable lightweight worker, run local tests, and request a strong review. Before escalating, it should first inspect the handover, issue dependencies, domain contract, and available evidence and record the decision it made. It must escalate only when the choice changes actuarial conventions or assumptions, product scope, security/data boundaries, public-release criteria, or requires founder preference. Every escalation must state the alternatives, recommendation, evidence and exact decision needed. A Herdr pane is live process state, not a guaranteed background service; if Herdr stops, durable continuation comes from GitHub issues and this handover.
+
+## Verification commands
+
+```bash
+git status --short
+git remote -v
+PYTHONPATH=src .venv/bin/python -m pytest -q
+node --input-type=module --check < web/app.js
+.venv/bin/python scripts/run_workspace.py
+```
+
+After starting the workspace, verify `http://127.0.0.1:8765/api/health` and exercise the affected browser path and downloads.

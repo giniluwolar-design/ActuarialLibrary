@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#162b35" />
+    <title>Actuarial Library · Reserving workspace</title>
+    <link rel="stylesheet" href="/web/styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="Actuarial Library home"
+        ><span class="brand-mark">a<span>l</span></span
+        ><span
+          >Actuarial<br />Library<span class="brand-caption"
+            >OPEN ACTUARIAL TOOLS</span
+          ></span
+        ></a
+      >
+      <div class="nav-label">WORKSPACE</div>
+      <nav aria-label="Workspace">
+        <button class="nav-item active" data-tab="triangles">
+          <span>▦</span> Reserving <small>01</small></button
+        ><button class="nav-item" data-tab="methods">
+          <span>◫</span> Method comparison</button
+        ><button class="nav-item" data-tab="scenarios">
+          <span>⑂</span> Scenarios <small id="scenario-count">0</small></button
+        ><button class="nav-item" data-tab="files">
+          <span>▤</span> Reports & files
+        </button>
+      </nav>
+      <div class="sidebar-context">
+        <div class="nav-label">CURRENT ANALYSIS</div>
+        <strong id="side-portfolio">Liability</strong
+        ><span id="side-valuation">31 December 2025</span
+        ><span class="sidebar-tag">Synthetic demo data</span>
+      </div>
+      <div class="sidebar-bottom">
+        <span class="local-dot"></span>
+        <div>Local workspace<small>Saved on this computer</small></div>
+      </div>
+    </aside>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="breadcrumb">
+          Workspace <span>/</span> <strong>Non-life reserving</strong>
+        </div>
+        <div class="topbar-right">
+          <span class="save-state" id="save-state">Opening workspace…</span
+          ><span class="avatar" title="Local analyst workspace">AL</span>
+        </div>
+      </header>
+      <div class="page-heading">
+        <div>
+          <div class="eyebrow">RESERVING WORKBENCH</div>
+          <h1>A clearer view of your reserves<span>.</span></h1>
+          <p>Explore the evidence. Challenge assumptions. Make the call.</p>
+        </div>
+        <button class="button primary" id="report">
+          ↓ <span>Create review report</span>
+        </button>
+      </div>
+      <div id="notice" class="notice" role="alert" hidden></div>
+      <div class="workspace-layout">
+        <main id="main">
+          <form id="setup" class="setup-bar">
+            <label
+              >Portfolio<select id="portfolio">
+                <option>Liability</option>
+                <option>Motor</option>
+              </select></label
+            ><label
+              >Valuation date<input
+                id="valuation"
+                type="date"
+                value="2025-12-31"
+                max="2025-12-31"
+                required /></label
+            ><label
+              >Period<select id="grain">
+                <option value="Y">Annual</option>
+                <option value="Q">Quarterly</option>
+              </select></label
+            ><button class="button quiet" type="submit" id="open-workspace">
+              Load view ↗</button
+            ><span class="demo-label">DEMO DATA</span>
+          </form>
+          <section class="kpis" aria-label="Observed claim totals">
+            <article>
+              <span>Paid to date</span><strong id="kpi-paid">—</strong
+              ><small>Cumulative payments</small>
+            </article>
+            <article>
+              <span>Case reserves</span><strong id="kpi-case">—</strong
+              ><small>Reported, still outstanding</small>
+            </article>
+            <article>
+              <span>Total incurred</span><strong id="kpi-incurred">—</strong
+              ><small>Paid + case reserves</small>
+            </article>
+          </section>
+          <div class="tabs" role="tablist" aria-label="Analysis views">
+            <button
+              id="tab-triangles"
+              role="tab"
+              aria-selected="true"
+              aria-controls="view-triangles"
+              data-tab="triangles"
+            >
+              Development</button
+            ><button
+              id="tab-methods"
+              role="tab"
+              aria-selected="false"
+              aria-controls="view-methods"
+              data-tab="methods"
+            >
+              Method comparison</button
+            ><button
+              id="tab-scenarios"
+              role="tab"
+              aria-selected="false"
+              aria-controls="view-scenarios"
+              data-tab="scenarios"
+            >
+              Scenarios</button
+            ><button
+              id="tab-files"
+              role="tab"
+              aria-selected="false"
+              aria-controls="view-files"
+              data-tab="files"
+            >
+              Reports & files
+            </button>
+          </div>
+          <section
+            id="view-triangles"
+            class="view"
+            role="tabpanel"
+            aria-labelledby="tab-triangles"
+          >
+            <article class="card triangle-card">
+              <div class="card-heading">
+                <div>
+                  <div class="eyebrow">THE DEVELOPMENT PICTURE</div>
+                  <h2 id="triangle-title">Age-to-age factors</h2>
+                </div>
+                <select id="basis" aria-label="Triangle basis">
+                  <option value="paid">Paid</option>
+                  <option value="incurred">Incurred</option>
+                  <option value="count">Claim count</option>
+                </select>
+              </div>
+              <div class="triangle-toolbar">
+                <div class="segmented" aria-label="Triangle display">
+                  <button class="active" id="show-factors" aria-pressed="true">
+                    Development factors</button
+                  ><button id="show-amounts" aria-pressed="false">
+                    Cumulative amounts
+                  </button>
+                </div>
+                <span class="subtle" id="triangle-periods"></span>
+              </div>
+              <div id="factor-table" class="table-scroll">
+                <div class="empty">Loading the saved claims history…</div>
+              </div>
+              <div class="triangle-footer">
+                <span
+                  ><i class="legend low"></i> Lower <i class="legend mid"></i
+                  ><i class="legend high"></i> Higher development</span
+                ><span>Click a factor to inspect its evidence</span>
+              </div>
+            </article>
+            <article id="observation" class="card observation" hidden>
+              <div class="card-heading">
+                <div>
+                  <div class="eyebrow">OBSERVATION REVIEW</div>
+                  <h2 id="observation-title"></h2>
+                </div>
+                <button
+                  class="icon-button"
+                  id="close-observation"
+                  aria-label="Close observation"
+                >
+                  ×
+                </button>
+              </div>
+              <div id="observation-detail"></div>
+              <form id="exclude-form">
+                <label
+                  >Why test this exclusion?<input
+                    id="exclusion-reason"
+                    required
+                    maxlength="1000"
+                    placeholder="e.g. Investigate a one-off settlement pattern" /></label
+                ><button class="button primary" type="submit">
+                  Compare exclusion scenario
+                </button>
+              </form>
+              <p class="footnote">
+                Creates a separate sensitivity. The baseline and final
+                selections stay unchanged.
+              </p>
+            </article>
+            <div class="lower-grid">
+              <article class="card">
+                <div class="card-heading">
+                  <div>
+                    <h2>Where the losses sit</h2>
+                    <p>Observed incurred by accident period</p>
+                  </div>
+                  <span class="unit" id="chart-unit">EUR</span>
+                </div>
+                <div id="loss-chart" class="loss-chart"></div>
+                <div class="chart-legend">
+                  <span><i class="legend paid"></i>Paid</span
+                  ><span><i class="legend case"></i>Case reserves</span>
+                </div>
+              </article>
+              <article class="card review-card">
+                <div class="eyebrow">BEFORE YOU SELECT</div>
+                <h2>Keep the evidence in view.</h2>
+                <div class="review-line">
+                  <span>01</span>
+                  <div>
+                    <strong>Inspect the pattern</strong>
+                    <p>Review individual ratios and fitting weights.</p>
+                  </div>
+                </div>
+                <div class="review-line">
+                  <span>02</span>
+                  <div>
+                    <strong>Challenge an assumption</strong>
+                    <p>Compare a labelled scenario with the baseline.</p>
+                  </div>
+                </div>
+                <button class="text-button" data-tab="methods">
+                  Compare method estimates →
+                </button>
+              </article>
+            </div>
+          </section>
+          <section
+            id="view-methods"
+            class="view"
+            role="tabpanel"
+            aria-labelledby="tab-methods"
+            hidden
+          >
+            <article class="card">
+              <div class="card-heading">
+                <div>
+                  <div class="eyebrow">DECISION SUPPORT</div>
+                  <h2>Different methods. One set of data.</h2>
+                  <p>
+                    Estimates for the selected accident period. No final method
+                    is selected.
+                  </p>
+                </div>
+                <label>Accident period<select id="origin"></select></label>
+              </div>
+              <div id="method-chart" class="method-chart"></div>
+              <div id="method-table" class="table-scroll"></div>
+              <p class="footnote">
+                Outstanding = ultimate − paid. Additional reserve = ultimate −
+                incurred.
+              </p>
+            </article>
+            <article class="card diagnostics">
+              <h2>Assumptions & diagnostics</h2>
+              <p>
+                Volume-weighted development · all eligible observations · tail
+                1.000.
+              </p>
+              <details>
+                <summary id="diagnostic-count">Calculation diagnostics</summary>
+                <ul id="diagnostics"></ul>
+              </details>
+            </article>
+          </section>
+          <section
+            id="view-scenarios"
+            class="view"
+            role="tabpanel"
+            aria-labelledby="tab-scenarios"
+            hidden
+          >
+            <article class="card">
+              <div class="card-heading">
+                <div>
+                  <div class="eyebrow">CHALLENGE THE BASELINE</div>
+                  <h2>What changes if…</h2>
+                  <p>
+                    Each sensitivity starts from the baseline on identical data.
+                  </p>
+                </div>
+              </div>
+              <form id="scenario-form" class="scenario-form">
+                <label
+                  >Basis<select id="scenario-basis">
+                    <option value="paid">Paid</option>
+                    <option value="incurred">Incurred</option>
+                    <option value="count">Claim count</option>
+                  </select></label
+                ><label
+                  >Historical window<select id="scenario-window">
+                    <option value="">All eligible pairs</option>
+                    <option value="3">Latest 3 pairs</option>
+                    <option value="5">Latest 5 pairs</option>
+                  </select></label
+                ><label
+                  >Tail factor<input
+                    type="number"
+                    id="scenario-tail"
+                    min="1"
+                    max="5"
+                    step="0.01"
+                    value="1" /></label
+                ><label class="rationale"
+                  >Rationale<input
+                    id="scenario-reason"
+                    required
+                    maxlength="1000"
+                    placeholder="Explain the assumption you want to investigate" /></label
+                ><button class="button primary">Run sensitivity</button>
+              </form>
+            </article>
+            <div id="scenario-list">
+              <div class="empty">
+                Your scenario comparisons will appear here.
+              </div>
+            </div>
+          </section>
+          <section
+            id="view-files"
+            class="view"
+            role="tabpanel"
+            aria-labelledby="tab-files"
+            hidden
+          >
+            <article class="card">
+              <div class="card-heading">
+                <div>
+                  <div class="eyebrow">REVIEW & HAND OVER</div>
+                  <h2>Evidence you can take with you.</h2>
+                  <p>
+                    Files reference this workspace, its data and its
+                    assumptions.
+                  </p>
+                </div>
+              </div>
+              <a id="export" class="download-card" href="#"
+                ><span class="file-icon">ZIP</span>
+                <div>
+                  <strong>Baseline analysis package</strong>
+                  <p>
+                    Result tables, factors, calibration and complete JSON run
+                    record
+                  </p>
+                </div>
+                <span>↓</span></a
+              >
+              <div id="files"></div>
+              <p class="footnote">
+                Reports are Markdown drafts. Packages contain values and
+                metadata; they are not formula workbooks.
+              </p>
+            </article>
+          </section>
+          <footer class="workspace-footer">
+            <span>Transparent methods. Traceable assumptions.</span
+            ><span id="run-id">Local analysis</span>
+          </footer>
+        </main>
+        <aside class="analyst" aria-label="Local AI analyst">
+          <div class="analyst-heading">
+            <div class="analyst-symbol">✳</div>
+            <div>
+              <h2>Your actuarial analyst</h2>
+              <span id="model-status">Checking local model…</span>
+            </div>
+            <span class="local-pill">LOCAL</span>
+          </div>
+          <div class="analyst-context">
+            <span class="local-dot"></span
+            ><span id="agent-context">Connected to this workspace</span>
+          </div>
+          <div class="chat-scroll" id="chat-scroll">
+            <div class="agent-intro">
+              <div class="eyebrow">LET’S WORK THROUGH IT</div>
+              <h3>From a question<br />to the evidence.</h3>
+              <p>
+                I can inspect development, compare assumptions and prepare a
+                review. The actuarial library calculates every result.
+              </p>
+            </div>
+            <div class="suggestions">
+              <button
+                data-prompt="Review the latest origin and highlight the most important method differences. Use evidence and keep the answer concise."
+              >
+                <span>◫</span> What stands out in this portfolio?
+                <span>↗</span></button
+              ><button
+                data-prompt="Inspect paid development from age 1 to 2. Summarise the fitting weights and observations to review. Keep the answer concise."
+              >
+                <span>▦</span> Inspect the development pattern
+                <span>↗</span></button
+              ><button
+                id="explain-library"
+              >
+                <span>⌘</span> Explain the calculation library <span>Instant</span>
+              </button>
+            </div>
+            <div id="chat-messages" aria-live="polite"></div>
+          </div>
+          <div id="job-progress" class="job-progress" role="status" hidden>
+            <span class="spinner"></span><span id="job-label"></span
+            ><button id="cancel-job" class="text-button">Stop</button>
+          </div>
+          <form id="chat-form" class="chat-composer">
+            <label class="sr-only" for="prompt">Message your analyst</label
+            ><textarea
+              id="prompt"
+              rows="3"
+              maxlength="6000"
+              placeholder="Ask a question, or describe a scenario…"
+              required
+            ></textarea>
+            <div>
+              <span>Evidence first. You decide.</span
+              ><button id="send" type="submit" aria-label="Send message">
+                ↑
+              </button>
+            </div>
+          </form>
+          <details class="model-settings">
+            <summary>Local model settings <span>No API fees</span></summary>
+            <label>Installed model<select id="model"></select></label
+            ><button id="refresh-models" class="text-button">
+              Refresh models
+            </button>
+            <p id="model-help">
+              Runs through Ollama on this computer. Hardware and electricity
+              costs still apply.
+            </p>
+          </details>
+          <details class="model-settings feedback-panel">
+            <summary>Help improve this workspace</summary>
+            <form id="feedback-form">
+              <label>Feedback type<select id="feedback-kind"><option value="problem">Something went wrong</option><option value="helpful">This was helpful</option><option value="idea">An improvement idea</option></select></label>
+              <label>Your feedback<textarea id="feedback-message" rows="3" required maxlength="2000" placeholder="What happened, and what would you prefer?"></textarea></label>
+              <button class="text-button" id="feedback-submit">Save feedback locally</button>
+              <p id="feedback-status" role="status">Saved on this computer for product review.</p>
+            </form>
+          </details>
+          <div class="analyst-footnote">
+            Exploratory support · final judgement is yours
+          </div>
+        </aside>
+      </div>
+    </div>
+    <script type="module" src="/web/app.js"></script>
+  </body>
+</html>

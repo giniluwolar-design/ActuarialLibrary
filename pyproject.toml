@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "actuarial-library"
+version = "0.1.0"
+description = "Explainable non-life reserving from claims history to reviewed results"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = ["numpy>=2,<3", "polars>=1.30,<2", "pydantic>=2.10,<3"]
+
+[project.optional-dependencies]
+app = ["streamlit>=1.45,<2", "plotly>=6,<8", "pandas>=2.2,<3"]
+web = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1", "python-multipart>=0.0.20,<1"]
+test = ["pytest>=8,<10", "chainladder==0.8.26", "ipython>=9,<10", "psutil>=6,<8", "ruff>=0.11", "build>=1.2", "httpx>=0.28,<1"]
+
+[project.scripts]
+actuarial-demo = "actuarial_library.demo:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/actuarial_library"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "app.py", "server.py", "web", ".streamlit", "data/demo", "examples", "docs", "scripts", "README.md", "CONTRIBUTING.md", "LICENSE", "THIRD_PARTY.md", "constraints.txt", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110

@@ -1,0 +1,23 @@
+{
+  "platform": "macOS-15.7.4-arm64-arm-64bit",
+  "python": "3.12.4",
+  "note": "One run per size, warm OS caches possible. Peak is total process RSS sampled every 10ms; generation excluded.",
+  "results": [
+    {
+      "claims_per_portfolio": 2000,
+      "snapshot_rows": 159176,
+      "import_seconds": 0.014748582994798198,
+      "validation_and_triangle_seconds": 0.29686216698610224,
+      "fit_seconds": 0.003334416018333286,
+      "sampled_peak_rss_mb": 317.703125
+    },
+    {
+      "claims_per_portfolio": 10000,
+      "snapshot_rows": 795538,
+      "import_seconds": 0.007287166983587667,
+      "validation_and_triangle_seconds": 0.8274381250084843,
+      "fit_seconds": 0.0022149579890538007,
+      "sampled_peak_rss_mb": 964.9375
+    }
+  ]
+}

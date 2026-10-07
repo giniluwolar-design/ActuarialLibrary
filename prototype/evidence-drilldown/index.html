@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Evidence review · Actuarial Workbench prototype</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h1>Evidence Graph</h1>
+        <span class="badge badge--workspace">Synthetic prototype</span>
+      </div>
+      <nav class="sidebar-nav">
+        <button class="nav-btn active" data-lvl="0">Review overview</button>
+        <button class="nav-btn" data-lvl="1">Connected evidence</button>
+        <button class="nav-btn" data-lvl="2">Source details</button>
+      </nav>
+      <div class="sidebar-export">
+        <h3>Export previews · no download</h3>
+        <button id="btn-export-local" class="btn btn--sm">Local review preview</button>
+        <button id="btn-export-public" class="btn btn--sm btn--outline">Public synthetic preview</button>
+        <div id="export-output" class="export-output hidden"></div>
+      </div>
+      <div class="sidebar-level">
+        <span class="level-dot" id="level-dot"></span>
+        <span id="level-label">L0 — Workspace Summary</span>
+      </div>
+    </aside>
+
+    <!-- Main analysis surface -->
+    <main class="surface" id="surface">
+      <p class="prototype-notice">INTERACTION PROTOTYPE · Invented EUR figures. No live calculations. Not integrated into the workbench.</p>
+      <header class="surface-header">
+        <h2 id="surface-title">Reserve Analysis — Headline Total</h2>
+        <span class="badge badge--level" id="surface-level-badge">L0</span>
+      </header>
+      <div id="surface-content" class="surface-content">
+        <!-- Rendered dynamically -->
+      </div>
+      <div id="surface-pagination" class="pagination hidden"></div>
+      <div id="provenance-panel" class="provenance-panel hidden">
+        <h3>Provenance</h3>
+        <div id="provenance-content"></div>
+        <button class="btn btn--sm" id="btn-close-provenance">Close</button>
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast for notifications -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
