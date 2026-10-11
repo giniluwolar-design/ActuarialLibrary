@@ -55,12 +55,15 @@ async function api(path, body) {
         },
   );
   const data = await response.json();
-  if (!response.ok)
-    throw new Error(
+  if (!response.ok) {
+    const error = new Error(
       typeof data.detail === "string"
         ? data.detail
         : JSON.stringify(data.detail || "Request failed"),
     );
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 function notice(message) {
@@ -90,6 +93,9 @@ function setBusy(value) {
       "#setup button,#report,#scenario-form button,#exclude-form button",
     )
     .forEach((el) => (el.disabled = value || !!state.job));
+  document.querySelectorAll('#selection-form input,#selection-form textarea,#selection-form button')
+    .forEach(el => { el.disabled = value || !!state.job || !state.workspace; });
+  if ($('selection-method')) $('selection-method').disabled = value || !!state.job || !state.workspace;
   $("send").disabled =
     value || !!state.job || !$("model").value || !state.workspace;
   document
@@ -246,6 +252,52 @@ function renderMethods() {
       )
       .join("") +
     "</tbody></table>";
+  renderSelection();
+}
+function selectionMoney(value) {
+  return value == null ? 'Unavailable' : new Intl.NumberFormat('en-GB', {
+    style: 'currency', currency: currency(), minimumFractionDigits: 2, maximumFractionDigits: 2,
+  }).format(value);
+}
+function selectionManualVisibility() {
+  const manual = $('selection-method').value === 'manual';
+  $('selection-manual-label').hidden = !manual;
+  $('selection-manual').required = manual;
+}
+function renderSelection() {
+  const w = state.workspace, current = w.selection, origin = $('origin').value;
+  const baseline = w.analysis.results.filter(row => row.origin === origin && row.method !== 'manual');
+  const chosen = current?.analysis.results.find(row => row.origin === origin && row.selected);
+  $('selection-origin').textContent = origin;
+  $('selection-currency').textContent = currency();
+  $('selection-method').innerHTML = '<option value="" disabled>Choose a method</option>' + baseline.map(row =>
+    `<option value="${esc(row.method)}" ${row.ultimate == null ? 'disabled' : ''}>${esc(names[row.method] || row.method)}${row.ultimate == null ? ' · unavailable' : ''}</option>`
+  ).join('') + '<option value="manual">Manual ultimate</option><option value="clear">Clear selection for this period</option>';
+  $('selection-method').value = chosen?.method || '';
+  $('selection-manual').value = chosen?.method === 'manual' ? chosen.ultimate : '';
+  $('selection-note').value = chosen?.selection_note || '';
+  $('selection-confirm').checked = false;
+  selectionManualVisibility();
+  const selected = current?.analysis.results.filter(row => row.selected) || [];
+  const complete = selected.length === w.origins.length && selected.every(row => row.outstanding != null);
+  $('selection-status').textContent = current
+    ? `Revision ${current.revision} · ${complete ? 'Complete' : 'Partial'} selection · ${selected.length}/${w.origins.length} periods. ${complete ? 'Every period has a recorded selection; this is not formal approval.' : 'Full reserve total withheld until every period is selected and available.'}`
+    : 'No selection recorded. Full reserve total withheld.';
+  const baselineWarnings = new Set(w.analysis.warnings);
+  const warnings = (current?.analysis.warnings || []).filter(warning => !baselineWarnings.has(warning));
+  $('selection-warnings').hidden = !warnings.length;
+  $('selection-warnings').innerHTML = warnings.map(warning => `<li>${esc(warning)}</li>`).join('');
+  $('selection-summary').innerHTML = selected.length ? '<table class="method-table"><thead><tr><th>Period</th><th>Your method</th><th>Ultimate</th><th>Outstanding</th><th>Additional reserve</th><th>Rationale</th></tr></thead><tbody>' + selected.map(row =>
+    `<tr><td>${esc(row.origin)}</td><td>${esc(names[row.method] || row.method)}</td><td>${selectionMoney(row.ultimate)}</td><td>${selectionMoney(row.outstanding)}</td><td>${selectionMoney(row.additional_reserve)}</td><td>${esc(row.selection_note)}</td></tr>`
+  ).join('') + '</tbody></table>' : '';
+  $('selection-export').hidden = !current;
+  if (current) $('selection-export').href = `/api/workspaces/${w.id}/export?selection_revision=${current.revision}`;
+  const history = w.selection_history || [];
+  $('selection-history-panel').hidden = !history.length;
+  $('selection-history').innerHTML = history.map(record =>
+    `<li>Revision ${record.revision} · ${esc(record.created_at)} · ${esc(record.authorship?.actor)} <a href="/api/workspaces/${w.id}/export?selection_revision=${record.revision}">Download saved revision ${record.revision}</a></li>`
+  ).join('');
+  setBusy(state.busy);
 }
 function closeEvidence() {
   state.evidenceRequest += 1;
@@ -580,6 +632,36 @@ $("setup").onsubmit = (e) => {
   loadWorkspace(true);
 };
 $("origin").onchange = renderMethods;
+$('selection-method').onchange = () => {
+  selectionManualVisibility();
+  $('selection-confirm').checked = false;
+};
+$('selection-form').onsubmit = async event => {
+  event.preventDefault();
+  if (!state.workspace || state.busy || state.job || !$('selection-confirm').checked) return;
+  const key = state.workspace.id;
+  const request = {
+    origin: $('origin').value, method: $('selection-method').value,
+    note: $('selection-note').value, expected_revision: state.workspace.selection?.revision || 0,
+    manual_ultimate: $('selection-method').value === 'manual' ? Number($('selection-manual').value) : null,
+  };
+  setBusy(true); notice('');
+  try {
+    const workspace = await api(`/api/workspaces/${key}/selections`, request);
+    if (state.workspace.id !== key) return;
+    state.workspace = workspace;
+    render();
+  } catch (error) {
+    notice(error.message);
+    if (error.status === 409 && state.workspace.id === key && !state.job) {
+      try {
+        state.workspace = await api(`/api/workspaces/${key}`);
+        render();
+        notice('Workspace refreshed after a conflict. Review the current selection and explicitly confirm again.');
+      } catch (refreshError) { notice(refreshError.message); }
+    }
+  } finally { setBusy(false); }
+};
 $("basis").onchange = () => {
   state.basis = $("basis").value;
   $("observation").hidden = true;

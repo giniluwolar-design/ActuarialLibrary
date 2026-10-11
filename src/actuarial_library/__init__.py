@@ -16,6 +16,7 @@ from .models import AnalysisConfig, DevelopmentConfig, FrequencySeverityConfig, 
 from .projection import ProjectionResult, project_payments
 from .reserving import run_reserving
 from .review import method_impact, observation_pairs
+from .selections import select_reserve
 
 __all__ = [
     "AnalysisConfig",
@@ -39,5 +40,6 @@ __all__ = [
     "observation_pairs",
     "project_payments",
     "run_reserving",
+    "select_reserve",
     "validate_claims",
 ]

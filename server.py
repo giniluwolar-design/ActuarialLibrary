@@ -1,12 +1,14 @@
 """Single-user, loopback-only reserving workspace. Run one uvicorn worker."""
 
+import io
 import json
 import os
 import re
 import threading
 import time
+import zipfile
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import UTC, date, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -17,13 +19,16 @@ import polars as pl
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt
 
 from actuarial_library import AnalysisConfig, build_triangles, export_results
 from actuarial_library.agent import AnalystSession, ToolArgs, local_models
 from actuarial_library.evidence_graph import EvidenceGraphStore
 from actuarial_library.exploration import factor_triangle
+from actuarial_library.export import safe_csv
+from actuarial_library.models import AnalysisResult, StrictModel
 from actuarial_library.review import method_impact, observation_pairs
+from actuarial_library.selections import select_reserve
 from actuarial_library.workspace import WorkspaceStore, decode_session, encode_session
 
 ROOT = Path(__file__).parent
@@ -81,6 +86,26 @@ class ToolRequest(BaseModel):
     arguments: ToolArgs = Field(default_factory=ToolArgs)
 
 
+class SelectionRequest(StrictModel):
+    # Let the library reject Infinity/NaN so FastAPI does not echo a non-JSON float
+    # from its validation details; select_reserve still requires finite values.
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=True)
+
+    origin: str = Field(min_length=1, max_length=80)
+    method: Literal[
+        "paid_cl",
+        "incurred_cl",
+        "paid_bf",
+        "incurred_bf",
+        "frequency_severity",
+        "manual",
+        "clear",
+    ]
+    note: str = Field(min_length=1, max_length=2000)
+    manual_ultimate: StrictFloat | StrictInt | None = None
+    expected_revision: StrictInt = Field(ge=0)
+
+
 @lru_cache(maxsize=1)
 def demo_data():
     # Use bundled snapshots, so restarts do not regenerate a different source.
@@ -136,6 +161,8 @@ def workspace_view(key, session):
             basis: finite_matrix(factor_triangle(t, basis)) for basis in ("paid", "incurred", "count")
         },
         "analysis": session.baseline.to_dict(),
+        "selection": getattr(session, "selection", None),
+        "selection_history": getattr(session, "selection_history", []),
         "record": session.record(),
         "scenarios": [
             {
@@ -184,6 +211,60 @@ def read_workspace(key: str):
             # Checkpoints are consistent even while model inference is in progress.
             return workspace_view(key, decode_session(store.get("sessions", key)))
         return workspace_view(key, get_session(key))
+
+
+@app.post("/api/workspaces/{key}/selections")
+def save_selection(key: str, request: SelectionRequest):
+    with lock:
+        if key in active:
+            raise HTTPException(409, "Wait for the analyst to finish before changing this workspace.")
+        try:
+            checkpoint = store.get("sessions", key)
+        except KeyError as exc:
+            raise HTTPException(404, "Saved workspace was not found.") from exc
+        previous = checkpoint.get("selection")
+        revision = previous["revision"] if previous else 0
+        if request.expected_revision != revision:
+            raise HTTPException(409, f"Selection revision changed; expected {revision}.")
+        session = get_session(key)
+        source_analysis = analysis_from_snapshot(previous["analysis"]) if previous else session.baseline
+        try:
+            analysis = select_reserve(
+                source_analysis,
+                request.origin,
+                request.method,
+                request.note,
+                request.manual_ultimate,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        action_id = uuid4().hex
+        created_at = datetime.now(UTC).isoformat()
+        authorship = {"actor": "local-user", "role": "analyst", "action": "reserve_selection"}
+        record = {
+            "revision": revision + 1,
+            "action_id": action_id,
+            "created_at": created_at,
+            "authorship": authorship,
+            "source_run": "baseline",
+            "origin": request.origin,
+            "method": request.method,
+            "note": request.note.strip(),
+            "manual_ultimate": request.manual_ultimate,
+            "analysis": analysis.to_dict(),
+        }
+        history = [*checkpoint.get("selection_history", []), record]
+        snapshot = encode_session(session)
+        snapshot["selection"] = record
+        snapshot["selection_history"] = history
+        try:
+            store.put("sessions", key, snapshot)
+        except Exception as exc:
+            raise HTTPException(500, "Could not save the selection checkpoint.") from exc
+        session.selection = record
+        session.selection_history = history
+        sessions[key] = session
+        return workspace_view(key, session)
 
 
 def graph_for_saved_workspace(key: str, run: str = "baseline"):
@@ -440,10 +521,83 @@ def download(key: str, file_id: str):
         )
 
 
+def analysis_from_snapshot(payload):
+    return AnalysisResult(
+        results=pl.DataFrame(payload["results"], infer_schema_length=None),
+        factors=pl.DataFrame(payload["factors"], infer_schema_length=None),
+        history=pl.DataFrame(payload["history"], infer_schema_length=None),
+        warnings=payload["warnings"],
+        config=AnalysisConfig.model_validate(payload["config"]),
+        metadata=payload["metadata"],
+    )
+
+
+def export_selection(record):
+    authorship = record["authorship"]
+    analysis = analysis_from_snapshot(record["analysis"])
+    metadata = {
+        **analysis.metadata,
+        "selection_revision": record["revision"],
+        "selection_action_id": record["action_id"],
+        "source_run": record["source_run"],
+        "selection_created_at": record["created_at"],
+        "selection_origin": record["origin"],
+        "selection_method": record["method"],
+        "selection_action_note": record["note"],
+        "selection_authorship": authorship,
+    }
+    selected_analysis = AnalysisResult(
+        results=analysis.results,
+        factors=analysis.factors,
+        history=analysis.history,
+        warnings=analysis.warnings,
+        config=analysis.config,
+        metadata=metadata,
+    )
+    buffer = io.BytesIO()
+    selection_columns = {
+        "selection_revision": str(record["revision"]),
+        "selection_action_id": record["action_id"],
+        "source_run": record["source_run"],
+        "selection_created_at": record["created_at"],
+        "selection_origin": record["origin"],
+        "selection_method": record["method"],
+        "selection_action_note": record["note"],
+        "selection_actor": authorship["actor"],
+        "selection_role": authorship["role"],
+        "selection_action": authorship["action"],
+    }
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        result_frame = analysis.results.with_columns(
+            [pl.lit(value).alias(column) for column, value in selection_columns.items()]
+        )
+        archive.writestr("results.csv", safe_csv(result_frame).encode())
+        archive.writestr("factors.csv", safe_csv(analysis.factors).encode())
+        archive.writestr("history.csv", safe_csv(analysis.history).encode())
+        archive.writestr("analysis.json", json.dumps(selected_analysis.to_dict(), indent=2, allow_nan=False))
+    return buffer.getvalue()
+
+
 @app.get("/api/workspaces/{key}/export")
-def export(key: str, scenario: str | None = None):
+def export(key: str, scenario: str | None = None, selection_revision: int | None = Query(default=None, ge=1)):
     with lock:
+        if scenario is not None and selection_revision is not None:
+            raise HTTPException(422, "Choose either a scenario or a human selection revision.")
         session = decode_session(store.get("sessions", key)) if key in active else get_session(key)
+        if selection_revision is not None:
+            record = next(
+                (item for item in getattr(session, "selection_history", []) if item["revision"] == selection_revision),
+                None,
+            )
+            if record is None:
+                raise HTTPException(404, "Selection revision was not found.")
+            return Response(
+                export_selection(record),
+                media_type="application/zip",
+                headers={
+                    "Content-Disposition": f'attachment; filename="reserving-{key[:8]}-selection-r{selection_revision}.zip"'
+                },
+            )
         if scenario and scenario not in session.scenarios:
             raise HTTPException(404, "Scenario not found.")
         result = session.scenarios[scenario] if scenario else session.baseline

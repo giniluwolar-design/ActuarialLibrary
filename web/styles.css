@@ -27,6 +27,15 @@
 .evidence-link strong { font-size: 14px; }
 .evidence-review pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; background: #f4f6f8; padding: 14px; border-radius: 8px; }
 .evidence-provenance { margin: 18px 0; }
+.reserve-selection { border-top: 3px solid var(--teal); }
+.selection-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
+.selection-note, .selection-confirm { grid-column: 1 / -1; }
+.selection-confirm { display: flex; align-items: flex-start; gap: 10px; line-height: 1.6; }
+.selection-confirm input { width: 18px; min-height: 18px; flex: 0 0 18px; margin-top: 2px; }
+.selection-form textarea { width: 100%; resize: vertical; border: 1px solid var(--line); border-radius: 5px; padding: 10px; }
+.reserve-selection li { margin: 8px 0; overflow-wrap: anywhere; }
+.reserve-selection .method-table td:last-child { min-width: 180px; overflow-wrap: anywhere; }
+@media (max-width: 520px) { .selection-form { grid-template-columns: 1fr; } }
 .evidence-actions { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 20px; }
 * {
   box-sizing: border-box;

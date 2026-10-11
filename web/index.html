@@ -254,8 +254,8 @@
                   <div class="eyebrow">DECISION SUPPORT</div>
                   <h2>Different methods. One set of data.</h2>
                   <p>
-                    Estimates for the selected accident period. No final method
-                    is selected.
+                    Saved baseline estimates for the accident period. Your
+                    selections are recorded separately below.
                   </p>
                 </div>
                 <label>Accident period<select id="origin"></select></label>
@@ -266,6 +266,33 @@
                 Outstanding = ultimate − paid. Additional reserve = ultimate −
                 incurred.
               </p>
+            </article>
+            <article id="reserve-selection" class="card reserve-selection" aria-label="Human reserve selection">
+              <div class="eyebrow">YOUR EXPLICIT DECISION</div>
+              <h2>Record a reserve selection</h2>
+              <p>Choose from the saved baseline or enter an explained manual ultimate. This does not change baseline estimates or scenarios and is not formal reserve approval.</p>
+              <p id="selection-status" role="status"></p>
+              <ul id="selection-warnings" class="selection-warnings" hidden></ul>
+              <form id="selection-form" class="selection-form">
+                <label>Method for <span id="selection-origin"></span>
+                  <select id="selection-method" required></select>
+                </label>
+                <label id="selection-manual-label" hidden>Manual ultimate <span id="selection-currency"></span>
+                  <input id="selection-manual" type="number" step="any" />
+                </label>
+                <label class="selection-note">Selection rationale
+                  <textarea id="selection-note" rows="3" maxlength="2000" required placeholder="What evidence supports this choice?"></textarea>
+                </label>
+                <label class="selection-confirm"><input id="selection-confirm" type="checkbox" required />I am explicitly recording this choice for the displayed accident period.</label>
+                <button class="button primary" type="submit">Save my selection</button>
+              </form>
+              <div id="selection-summary" class="table-scroll"></div>
+              <a id="selection-export" class="text-button" hidden>Download this selection revision ↓</a>
+              <details id="selection-history-panel" hidden>
+                <summary>Recorded selection actions</summary>
+                <ul id="selection-history"></ul>
+              </details>
+              <p class="footnote">Saved locally. Notes, values and downloads may be confidential. The analyst cannot record selections on your behalf.</p>
             </article>
             <article class="card diagnostics">
               <h2>Assumptions & diagnostics</h2>
