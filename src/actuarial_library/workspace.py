@@ -39,11 +39,26 @@ def encode_session(session):
         "model_info": session.model_info,
         "baseline": session.baseline.to_dict(),
         "scenarios": {key: value.to_dict() for key, value in session.scenarios.items()},
+        "selection": getattr(session, "selection", None),
+        "selection_history": getattr(session, "selection_history", []),
         "artifacts": {
             key: {**value, "content": base64.b64encode(value["content"]).decode()}
             for key, value in session.artifacts.items()
         },
     }
+
+
+def decode_analysis(result) -> AnalysisResult:
+    """Restore an exact saved analysis without executing a calculation."""
+    return AnalysisResult(
+        **{
+            name: pl.DataFrame(result[name], infer_schema_length=None)
+            for name in ("results", "factors", "history")
+        },
+        config=AnalysisConfig.model_validate(result["config"]),
+        warnings=result["warnings"],
+        metadata=result["metadata"],
+    )
 
 
 def decode_session(data):
@@ -54,26 +69,23 @@ def decode_session(data):
         raw[basis] = np.array(raw[basis], dtype=float)
     raw["states"] = np.array(raw["states"])
     raw["claims"] = pl.read_parquet(io.BytesIO(base64.b64decode(claims))) if claims else None
-    session = AnalystSession(Triangle(**raw), AnalysisConfig.model_validate(data["config"]))
-    for name in ("messages", "transcript", "evidence", "model_info"):
-        setattr(session, name, data[name])
+    session = AnalystSession.__new__(AnalystSession)
+    session.triangle = Triangle(**raw)
+    session.config = AnalysisConfig.model_validate(data["config"])
+    session.messages = data.get("messages", [])
+    session.transcript = data.get("transcript", [])
+    session.evidence = data.get("evidence", [])
+    session.model_info = data.get("model_info", {})
+    session.selection = data.get("selection")
+    session.selection_history = data.get("selection_history", [])
+    session.scenarios = {}
+    session.artifacts = {}
 
-    def result_from_dict(result):
-        return AnalysisResult(
-            **{
-                name: pl.DataFrame(result[name], infer_schema_length=None)
-                for name in ("results", "factors", "history")
-            },
-            config=AnalysisConfig.model_validate(result["config"]),
-            warnings=result["warnings"],
-            metadata=result["metadata"],
-        )
-
-    session.baseline = result_from_dict(data["baseline"])
-    session.scenarios = {key: result_from_dict(result) for key, result in data["scenarios"].items()}
+    session.baseline = decode_analysis(data["baseline"])
+    session.scenarios = {key: decode_analysis(result) for key, result in data.get("scenarios", {}).items()}
     session.artifacts = {
         key: {**value, "content": base64.b64decode(value["content"])}
-        for key, value in data["artifacts"].items()
+        for key, value in data.get("artifacts", {}).items()
     }
     return session
 

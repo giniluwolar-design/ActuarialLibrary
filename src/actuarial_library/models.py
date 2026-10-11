@@ -155,3 +155,59 @@ class AnalysisResult:
             "config": self.config.model_dump(mode="json"),
             "metadata": self.metadata,
         }
+
+
+class ProjectionComponent(StrictModel):
+    """One externally evidenced dated amount, conditional weight, or cumulative share."""
+
+    payment_date: date
+    value: float
+    age: int | None = Field(default=None, ge=1)
+
+
+class ExternalOriginPattern(StrictModel):
+    """Explicit schedule and its evidence for one origin."""
+
+    components: list[ProjectionComponent] = Field(min_length=1)
+    value_type: Literal["amount", "weight"]
+    weight_semantics: Literal["future_conditional", "cumulative_development"] | None = None
+    coverage_ages: list[int] = Field(default_factory=list, min_length=1)
+    source: str = Field(min_length=1)
+    rationale: str = Field(min_length=1)
+    name: str = "external pattern"
+
+    @model_validator(mode="after")
+    def validate_pattern(self):
+        if not self.source.strip() or not self.rationale.strip():
+            raise ValueError("External patterns require a source and rationale.")
+        if len(set(self.coverage_ages)) != len(self.coverage_ages):
+            raise ValueError("External pattern coverage ages must be unique.")
+        if any(age < 1 for age in self.coverage_ages):
+            raise ValueError("External pattern coverage ages must be positive.")
+        if self.value_type == "amount" and self.weight_semantics is not None:
+            raise ValueError("Amount schedules do not have weight semantics.")
+        if self.value_type == "weight" and self.weight_semantics is None:
+            raise ValueError("External weights must declare their semantics.")
+        if len({component.payment_date for component in self.components}) != len(self.components):
+            raise ValueError("External schedule dates must be unique.")
+        return self
+
+
+class ProjectionConfig(StrictModel):
+    """Explicit projection assumptions. The default leaves tail timing pending."""
+
+    output_grain: Literal["Y", "Q"] | None = None
+    tail_timing: Literal[
+        "selected_next_development_period", "undated_pending", "external"
+    ] = "undated_pending"
+    tail_rationale: str = ""
+    external_patterns: dict[str, ExternalOriginPattern] = Field(default_factory=dict)
+    currency_minor_unit: int | None = Field(default=None, ge=0, le=8)
+
+    @model_validator(mode="after")
+    def validate_assumptions(self):
+        if self.tail_timing == "selected_next_development_period" and not self.tail_rationale.strip():
+            raise ValueError("Explain the selected next-period tail timing.")
+        if self.tail_timing == "external" and not self.tail_rationale.strip():
+            raise ValueError("Explain the selected external tail timing.")
+        return self

@@ -254,8 +254,8 @@
                   <div class="eyebrow">DECISION SUPPORT</div>
                   <h2>Different methods. One set of data.</h2>
                   <p>
-                    Estimates for the selected accident period. No final method
-                    is selected.
+                    Saved baseline estimates for the accident period. Your
+                    selections are recorded separately below.
                   </p>
                 </div>
                 <label>Accident period<select id="origin"></select></label>
@@ -267,6 +267,33 @@
                 incurred.
               </p>
             </article>
+            <article id="reserve-selection" class="card reserve-selection" aria-label="Human reserve selection">
+              <div class="eyebrow">YOUR EXPLICIT DECISION</div>
+              <h2>Record a reserve selection</h2>
+              <p>Choose from the saved baseline or enter an explained manual ultimate. This does not change baseline estimates or scenarios and is not formal reserve approval.</p>
+              <p id="selection-status" role="status"></p>
+              <ul id="selection-warnings" class="selection-warnings" hidden></ul>
+              <form id="selection-form" class="selection-form">
+                <label>Method for <span id="selection-origin"></span>
+                  <select id="selection-method" required></select>
+                </label>
+                <label id="selection-manual-label" hidden>Manual ultimate <span id="selection-currency"></span>
+                  <input id="selection-manual" type="number" step="any" />
+                </label>
+                <label class="selection-note">Selection rationale
+                  <textarea id="selection-note" rows="3" maxlength="2000" required placeholder="What evidence supports this choice?"></textarea>
+                </label>
+                <label class="selection-confirm"><input id="selection-confirm" type="checkbox" required />I am explicitly recording this choice for the displayed accident period.</label>
+                <button class="button primary" type="submit">Save my selection</button>
+              </form>
+              <div id="selection-summary" class="table-scroll"></div>
+              <a id="selection-export" class="text-button" hidden>Download this selection revision ↓</a>
+              <details id="selection-history-panel" hidden>
+                <summary>Recorded selection actions</summary>
+                <ul id="selection-history"></ul>
+              </details>
+              <p class="footnote">Saved locally. Notes, values and downloads may be confidential. The analyst cannot record selections on your behalf.</p>
+            </article>
             <article class="card diagnostics">
               <h2>Assumptions & diagnostics</h2>
               <p>
@@ -277,6 +304,33 @@
                 <summary id="diagnostic-count">Calculation diagnostics</summary>
                 <ul id="diagnostics"></ul>
               </details>
+            </article>
+            <article id="evidence-review" class="card evidence-review" aria-label="Recorded evidence" hidden>
+              <div class="card-heading">
+                <div>
+                  <div class="eyebrow">FOLLOW THE RECORDED EVIDENCE</div>
+                  <h2 id="evidence-title" tabindex="-1">Result evidence</h2>
+                  <p>Saved calculation evidence, not a model explanation or final approval.</p>
+                </div>
+                <button id="close-evidence" class="text-button" type="button">Close review</button>
+              </div>
+              <nav id="evidence-breadcrumbs" class="evidence-breadcrumbs" aria-label="Evidence trail"></nav>
+              <p id="evidence-status" role="status"></p>
+              <dl id="evidence-summary" class="evidence-summary"></dl>
+              <details class="evidence-provenance">
+                <summary>Recorded identity & provenance</summary>
+                <pre id="evidence-provenance"></pre>
+              </details>
+              <h2>Connected evidence</h2>
+              <p>Open a dependency to inspect its assumptions, factors or observations. Incoming links show where this evidence is referenced.</p>
+              <div id="evidence-links" class="evidence-links"></div>
+              <button id="evidence-next" class="text-button" type="button" hidden>Load more connections</button>
+              <div class="evidence-actions">
+                <button id="evidence-load-payload" class="text-button" type="button">Load recorded payload</button>
+                <a id="evidence-export" class="text-button" href="#">Download local evidence review ↓</a>
+              </div>
+              <p class="footnote">Local review export may contain confidential values and labels. It is not a public or anonymised export.</p>
+              <pre id="evidence-payload" hidden></pre>
             </article>
           </section>
           <section
