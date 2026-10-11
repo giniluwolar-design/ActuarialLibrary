@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 
 _PRIVATE_CLASSES = {"artifact/private", "source/private", "claims/private", "tool/invocation"}
-GRAPH_MIGRATION_VERSION = "evidence-graph-v3-lineage"
+GRAPH_MIGRATION_VERSION = "evidence-graph-v4-frequency-severity-lineage"
 _EDGE_PAIRS = {
     "derived_from": {
         ("triangle/cell", "data/source"),
@@ -28,6 +28,9 @@ _EDGE_PAIRS = {
         ("calc/factor", "assumption/parameter"),
         ("calc/result", "data/source"),
         ("calc/factor", "data/source"),
+        ("assumption/parameter", "triangle/cell"),
+        ("assumption/parameter", "calc/factor"),
+        ("assumption/parameter", "assumption/parameter"),
     },
     "used_observation": {("calc/factor", "triangle/cell")},
     "excludes": {("assumption/exclusion", "triangle/cell")},
@@ -501,9 +504,83 @@ class EvidenceGraphStore:
                         "evidential_role": "calculation_evidence",
                         "state": "observed",
                         "payload": history_row,
-                        "summary": {"availability": "observed", "validation": "valid", "parameter": "frequency_severity_calibration", "target": target_origin, "year": year},
+                        "summary": {"availability": "observed", "validation": "valid", "parameter": "frequency_severity_calibration", "target": target_origin, "year": year, "lineage_version": GRAPH_MIGRATION_VERSION},
                     })
+                    self._supersede_previous(db, workspace_id, history_node, run_id)
                     history_nodes[(target_origin, year)] = history_node
+
+                fs_config = run_config.get("frequency_severity", {})
+                if not isinstance(fs_config, dict):
+                    fs_config = {}
+                origin_years = triangle.get("origin_years", [])
+                history_lineage_controls = {}
+                for (target_origin, year), history_node in history_nodes.items():
+                    source_origins = [
+                        origin for index, origin in enumerate(origins)
+                        if index < len(origin_years) and str(origin_years[index]) == year
+                    ]
+                    missing_components = []
+                    for component, basis, config_key in (
+                        ("historical_ultimate", "incurred", "historical_ultimates"),
+                        ("historical_count", "count", "historical_counts"),
+                    ):
+                        overrides = fs_config.get(config_key, {})
+                        if not isinstance(overrides, dict):
+                            overrides = {}
+                        if not source_origins:
+                            missing_components.append(component)
+                            continue
+                        for source_origin in source_origins:
+                            if source_origin in overrides:
+                                parameter_node = self._new_node(db, workspace_id, {
+                                    "node_class": "assumption/parameter", "run_id": run_id, "data_version": data_version,
+                                    "config_hash": run_config_hash, "local_key": f"frequency-severity:{component}:{source_origin}",
+                                    "label": f"{source_origin} {component.replace('_', ' ')}", "evidential_role": "calculation_evidence",
+                                    "state": "observed", "payload": {"parameter": component, "origin": source_origin, "year": year, "value": overrides[source_origin], "source": "frequency_severity_config"},
+                                    "summary": {"availability": "observed", "validation": "valid", "parameter": component, "origin": source_origin},
+                                })
+                                self._write_edge(db, workspace_id, {
+                                    "type": "derived_from", "source_node_id": history_node["node_id"], "source_revision": history_node["revision"],
+                                    "target_node_id": parameter_node["node_id"], "target_revision": parameter_node["revision"],
+                                    "metadata": {"component": component, "origin": source_origin, "year": year, "source": "manual_override"},
+                                }, run_id)
+                                continue
+
+                            source_index = origins.index(source_origin)
+                            latest_age = len(origins) - source_index
+                            latest_cell = cells.get((basis, source_origin, latest_age))
+                            if latest_cell is None or latest_cell["state"] != "observed":
+                                missing_components.append(f"{component}:{source_origin}:latest_cell")
+                                continue
+                            self._write_edge(db, workspace_id, {
+                                "type": "derived_from", "source_node_id": history_node["node_id"], "source_revision": history_node["revision"],
+                                "target_node_id": latest_cell["node_id"], "target_revision": latest_cell["revision"],
+                                "metadata": {"component": component, "origin": source_origin, "year": year, "cell_role": "latest_incurred" if basis == "incurred" else "latest_count"},
+                            }, run_id)
+                            expected_ages = set(range(latest_age, len(origins) + 1))
+                            linked_ages = set()
+                            for factor_key, factor in factor_nodes.items():
+                                factor_basis, factor_age = factor_key.rsplit(":", 1)
+                                age = int(factor_age)
+                                if factor_basis == basis and age in expected_ages:
+                                    self._write_edge(db, workspace_id, {
+                                        "type": "derived_from", "source_node_id": history_node["node_id"], "source_revision": history_node["revision"],
+                                        "target_node_id": factor["node_id"], "target_revision": factor["revision"],
+                                        "metadata": {"component": component, "origin": source_origin, "year": year, "evidence_role": "historical_development_factor"},
+                                    }, run_id)
+                                    linked_ages.add(age)
+                            if linked_ages != expected_ages:
+                                missing_components.append(f"{component}:{source_origin}:factors")
+                    if missing_components:
+                        blocker = self._new_node(db, workspace_id, {
+                            "node_class": "control/check", "run_id": run_id, "data_version": data_version,
+                            "config_hash": run_config_hash, "local_key": f"history:{target_origin}:{year}:lineage-unknown",
+                            "label": f"{target_origin} calibration {year} source lineage unavailable", "evidential_role": "calculation_evidence",
+                            "state": "missing", "reason_code": "legacy_lineage_unavailable",
+                            "payload": {"target": target_origin, "year": year, "missing_components": missing_components},
+                            "summary": {"availability": "missing", "validation": "unavailable-blocked", "reason_code": "legacy_lineage_unavailable"},
+                        })
+                        history_lineage_controls.setdefault(target_origin, []).append(blocker)
 
                 for row in result.get("results", []):
                     origin, method = str(row.get("origin", "unknown")), str(row.get("method", "unknown"))
@@ -537,9 +614,17 @@ class EvidenceGraphStore:
                             if target_origin == origin and year in target_years:
                                 self._write_edge(db, workspace_id, {"type": "derived_from", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"], "target_node_id": history_node["node_id"], "target_revision": history_node["revision"]}, run_id)
                                 linked_history += 1
+                        for blocker in history_lineage_controls.get(origin, []):
+                            self._write_edge(db, workspace_id, {
+                                "type": "has_control", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"],
+                                "target_node_id": blocker["node_id"], "target_revision": blocker["revision"],
+                            }, run_id)
                         fs_config = run_config.get("frequency_severity", {})
                         count_mode = fs_config.get("count_mode", "developed") if isinstance(fs_config, dict) else "unknown"
                         if count_mode == "developed":
+                            latest_count = cells.get(("count", origin, latest_age))
+                            if latest_count and row.get("expected_count") is not None:
+                                self._write_edge(db, workspace_id, {"type": "derived_from", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"], "target_node_id": latest_count["node_id"], "target_revision": latest_count["revision"], "metadata": {"cell_role": "developed_count_base", "scenario_run_id": run_id}}, run_id)
                             for factor_key, factor in factor_nodes.items():
                                 factor_basis, factor_age = factor_key.rsplit(":", 1)
                                 if factor_basis == "count" and int(factor_age) >= latest_age:

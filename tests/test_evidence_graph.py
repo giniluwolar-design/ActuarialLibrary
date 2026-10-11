@@ -1,8 +1,56 @@
 import json
+from datetime import date
 
+import numpy as np
 import pytest
 
+from actuarial_library.agent import AnalystSession
 from actuarial_library.evidence_graph import GRAPH_MIGRATION_VERSION, EvidenceGraphStore
+from actuarial_library.models import AnalysisConfig, Triangle
+from actuarial_library.workspace import encode_session
+
+
+def annual_session(config=None):
+    paid = np.array([[100.0, 200.0, 240.0], [120.0, 240.0, np.nan], [150.0, np.nan, np.nan]])
+    incurred = paid + np.where(np.isfinite(paid), 10.0, 0.0)
+    triangle = Triangle(
+        origins=["2023", "2024", "2025"],
+        origin_years=[2023, 2024, 2025],
+        grain="Y",
+        valuation=date(2025, 12, 31),
+        paid=paid,
+        incurred=incurred,
+        count=np.array([[2.0, 3.0, 3.0], [2.0, 3.0, np.nan], [1.0, np.nan, np.nan]]),
+        states=np.array([["observed", "observed", "observed"], ["observed", "observed", "future"], ["observed", "future", "future"]]),
+        metadata={"portfolio": "Synthetic annual triangle"},
+    )
+    return encode_session(AnalystSession(triangle, config or AnalysisConfig()))
+
+
+def quarterly_session():
+    origins = [f"{year}Q{quarter}" for year in (2023, 2024, 2025) for quarter in range(1, 5)]
+    origin_years = [int(origin[:4]) for origin in origins]
+    n = len(origins)
+    paid = np.full((n, n), np.nan)
+    incurred = np.full((n, n), np.nan)
+    count = np.full((n, n), np.nan)
+    for index in range(n):
+        for age_index in range(n - index):
+            paid[index, age_index] = 100 + 2 * index + 20 * age_index
+            incurred[index, age_index] = paid[index, age_index] + 10
+            count[index, age_index] = 1 + age_index
+    triangle = Triangle(
+        origins=origins,
+        origin_years=origin_years,
+        grain="Q",
+        valuation=date(2025, 12, 31),
+        paid=paid,
+        incurred=incurred,
+        count=count,
+        states=np.where(np.isfinite(paid), "observed", "future"),
+        metadata={"portfolio": "Synthetic quarterly triangle"},
+    )
+    return encode_session(AnalystSession(triangle, AnalysisConfig()))
 
 
 def snapshot(scenarios=None):
@@ -201,7 +249,7 @@ def test_frequency_severity_uses_saved_history_and_count_mode_not_blanket_factor
     assert any(item["type"] == "derived_from" and item["node_class"] == "assumption/parameter" and item["label"] == "2023 manual expected ultimate prior" for item in bf_edges)
 
 
-def test_prior_v2_marker_rebuilds_lineage_without_mutating_saved_results_or_history(tmp_path):
+def test_prior_v3_marker_rebuilds_lineage_without_mutating_saved_results_or_history(tmp_path):
     path = tmp_path / "old-preview.sqlite3"
     store = EvidenceGraphStore(path)
     fixture = snapshot()
@@ -227,16 +275,23 @@ def test_prior_v2_marker_rebuilds_lineage_without_mutating_saved_results_or_hist
     store.write_edge("w1", {"type": "derived_from", "source_node_id": result_id, "source_revision": 1, "target_node_id": factor["node_id"], "target_revision": factor["revision"]})
     store.write_edge("w1", {"type": "derived_from", "source_node_id": result_id, "source_revision": 1, "target_node_id": next(node["node_id"] for node in overview["nodes"] if node["node_class"] == "calc/factor" and node["label"] == "count age 1"), "target_revision": 1})
 
-    # Model the preview database written by graph v2: same snapshot hash, old
-    # marker, and result/factor records without the newer lineage version.
+    # Model the already-published graph v3 preview: same snapshot hash, old
+    # marker, v3 result/factor revisions, and saved calibration rows without
+    # actual input ancestors.
     with store.connect() as db:
         for node_class in ("calc/result", "calc/factor"):
             rows = db.execute("SELECT node_id, revision, summary_json FROM evidence_graph_nodes WHERE workspace_id=? AND node_class=?", ("w1", node_class)).fetchall()
             for row in rows:
                 old_summary = json.loads(row["summary_json"])
+                old_summary["lineage_version"] = "evidence-graph-v3-lineage"
+                db.execute("UPDATE evidence_graph_nodes SET summary_json=? WHERE workspace_id=? AND node_id=? AND revision=?", (json.dumps(old_summary, sort_keys=True, separators=(",", ":")), "w1", row["node_id"], row["revision"]))
+        rows = db.execute("SELECT node_id, revision, summary_json FROM evidence_graph_nodes WHERE workspace_id=? AND node_class='assumption/parameter'", ("w1",)).fetchall()
+        for row in rows:
+            old_summary = json.loads(row["summary_json"])
+            if old_summary.get("parameter") == "frequency_severity_calibration":
                 old_summary.pop("lineage_version", None)
                 db.execute("UPDATE evidence_graph_nodes SET summary_json=? WHERE workspace_id=? AND node_id=? AND revision=?", (json.dumps(old_summary, sort_keys=True, separators=(",", ":")), "w1", row["node_id"], row["revision"]))
-        db.execute("UPDATE evidence_graph_migrations SET migration_version='evidence-graph-v2' WHERE workspace_id='w1'")
+        db.execute("UPDATE evidence_graph_migrations SET migration_version='evidence-graph-v3-lineage' WHERE workspace_id='w1'")
 
     store.ensure_workspace("w1", fixture)
     current = store.node("w1", result_id, revision=2)
@@ -248,6 +303,10 @@ def test_prior_v2_marker_rebuilds_lineage_without_mutating_saved_results_or_hist
     latest_edges = store.adjacency("w1", result_id, revision=2)["items"]
     assert not any(item["node_class"] == "calc/factor" for item in latest_edges)
     assert any(item["type"] == "supersedes" and item["node_id"] == result_id and item["revision"] == 1 for item in latest_edges)
+    latest_history = next(item for item in latest_edges if item["node_class"] == "assumption/parameter" and item["label"] == "2023 calibration 2022")
+    assert latest_history["revision"] == 2
+    assert store.node("w1", latest_history["node_id"], revision=2)["summary"]["lineage_version"] == GRAPH_MIGRATION_VERSION
+    assert any(item["type"] == "supersedes" and item["node_id"] == latest_history["node_id"] and item["revision"] == 1 for item in store.adjacency("w1", latest_history["node_id"], revision=2)["items"])
     old_edges = store.adjacency("w1", result_id, revision=1)["items"]
     assert {item["label"] for item in old_edges if item["node_class"] == "calc/factor"} >= {"incurred age 1", "count age 1"}
     refreshed_headline = store.summary("w1")["headline"]
@@ -258,6 +317,10 @@ def test_prior_v2_marker_rebuilds_lineage_without_mutating_saved_results_or_hist
     with store.connect() as db:
         marker = db.execute("SELECT migration_version FROM evidence_graph_migrations WHERE workspace_id='w1'").fetchone()
     assert marker["migration_version"] == GRAPH_MIGRATION_VERSION
+    store.ensure_workspace("w1", fixture)
+    assert store.node("w1", result_id, revision=2)["summary"]["lineage_version"] == GRAPH_MIGRATION_VERSION
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM evidence_graph_nodes WHERE workspace_id='w1' AND node_id=?", (result_id,)).fetchone()[0] == 2
 
 
 def test_legacy_frequency_severity_without_saved_history_has_blocking_control(tmp_path):
@@ -276,6 +339,117 @@ def test_legacy_frequency_severity_without_saved_history_has_blocking_control(tm
     assert store.node("w1", control["node_id"])["reason_code"] == "legacy_lineage_unavailable"
     assert store.payload("w1", control["node_id"])["reason"] == "Stored result has calibration output but no matching saved history rows."
     assert not any(item["node_class"] == "calc/factor" for item in edges)
+
+
+def test_developed_frequency_severity_traces_target_count_and_historical_calibration_inputs(tmp_path):
+    store = EvidenceGraphStore(tmp_path / "annual-fs-lineage.sqlite3")
+    saved = annual_session()
+    store.ensure_workspace("w1", saved)
+    overview = store.summary("w1")
+    result = next(row for row in overview["headline"] if row["origin"] == "2025" and row["method"] == "frequency_severity")
+    assert result["ultimate"] == pytest.approx(136.9047619047619)
+    result_edges = store.adjacency("w1", result["result_node_id"])["items"]
+    latest_count = next(item for item in result_edges if item["node_class"] == "triangle/cell" and item["metadata"].get("cell_role") == "developed_count_base")
+    latest_count_payload = store.payload("w1", latest_count["node_id"])
+    assert (latest_count_payload["origin"], latest_count_payload["basis"], latest_count_payload["development"], latest_count_payload["value"]) == ("2025", "count", 1, 1.0)
+    assert {item["label"] for item in result_edges if item["node_class"] == "calc/factor" and item["metadata"].get("evidence_role") == "developed_count"} >= {"count age 1", "count age 2", "count age 3"}
+
+    calibration_edges = [item for item in result_edges if item["node_class"] == "assumption/parameter" and item["label"].startswith("2025 calibration ")]
+    calibrations = {str(store.payload("w1", node["node_id"])["year"]): node for node in calibration_edges}
+    assert set(calibrations) == {"2023", "2024"}
+    expected_by_year = {
+        "2023": {"origin": "2023", "incurred": {3}, "count": {3}, "incurred_value": 250.0, "count_value": 3.0},
+        "2024": {"origin": "2024", "incurred": {2, 3}, "count": {2, 3}, "incurred_value": 250.0, "count_value": 3.0},
+    }
+    for year, calibration in calibrations.items():
+        ancestors = store.adjacency("w1", calibration["node_id"], revision=calibration["revision"])["items"]
+        cells = [store.payload("w1", item["node_id"]) for item in ancestors if item["node_class"] == "triangle/cell"]
+        factors = [item for item in ancestors if item["node_class"] == "calc/factor"]
+        expected = expected_by_year[year]
+        for basis, value_key in (("incurred", "incurred_value"), ("count", "count_value")):
+            observed_basis_cells = [cell for cell in cells if cell["basis"] == basis]
+            assert observed_basis_cells == [{
+                "basis": basis, "origin": expected["origin"], "origin_year": int(year),
+                "development": min(expected[basis]), "value": expected[value_key],
+                "availability": "observed", "validation": "valid",
+            }]
+            ages = {int(item["label"].rsplit(" ", 1)[1]) for item in factors if item["label"].startswith(f"{basis} age")}
+            assert ages == expected[basis]
+
+
+def test_manual_frequency_severity_calibration_uses_parameter_nodes_not_factors(tmp_path):
+    config = AnalysisConfig.model_validate({
+        "frequency_severity": {
+            "count_mode": "manual",
+            "expected_counts": {"2025": 5.0},
+            "historical_ultimates": {"2023": 250.0, "2024": 297.6190476190476},
+            "historical_counts": {"2023": 3.0, "2024": 3.0},
+            "rationale": "Synthetic manual calibration and target count.",
+        },
+    })
+    store = EvidenceGraphStore(tmp_path / "manual-fs-lineage.sqlite3")
+    store.ensure_workspace("w1", annual_session(config))
+    overview = store.summary("w1")
+    result = next(row for row in overview["headline"] if row["origin"] == "2025" and row["method"] == "frequency_severity")
+    result_edges = store.adjacency("w1", result["result_node_id"])["items"]
+    assert not any(item["node_class"] == "calc/factor" for item in result_edges)
+    assert any(item["node_class"] == "assumption/parameter" and item["label"] == "2025 expected count" for item in result_edges)
+
+    calibration = next(item for item in result_edges if item["node_class"] == "assumption/parameter" and item["label"] == "2025 calibration 2024")
+    ancestors = store.adjacency("w1", calibration["node_id"])["items"]
+    assert not any(item["node_class"] == "calc/factor" or item["node_class"] == "triangle/cell" for item in ancestors)
+    assert {item["label"] for item in ancestors if item["node_class"] == "assumption/parameter"} == {
+        "2024 historical ultimate", "2024 historical count",
+    }
+
+
+def test_incomplete_historical_source_map_blocks_frequency_severity_result(tmp_path):
+    saved = annual_session()
+    saved["triangle"].pop("origin_years")
+    store = EvidenceGraphStore(tmp_path / "incomplete-history-lineage.sqlite3")
+    store.ensure_workspace("w1", saved)
+    result = next(row for row in store.summary("w1")["headline"] if row["origin"] == "2025" and row["method"] == "frequency_severity")
+    edges = store.adjacency("w1", result["result_node_id"])["items"]
+    blockers = [item for item in edges if item["type"] == "has_control" and item["node_class"] == "control/check"]
+    assert blockers
+    assert {store.node("w1", item["node_id"])["reason_code"] for item in blockers} == {"legacy_lineage_unavailable"}
+    calibrations = [item for item in edges if item["node_class"] == "assumption/parameter" and "calibration" in item["label"]]
+    assert calibrations
+    for calibration in calibrations:
+        ancestors = store.adjacency("w1", calibration["node_id"])["items"]
+        assert not any(item["node_class"] in {"triangle/cell", "calc/factor"} for item in ancestors)
+
+
+def test_quarterly_calibration_aggregates_all_origins_in_each_year(tmp_path):
+    store = EvidenceGraphStore(tmp_path / "quarterly-fs-lineage.sqlite3")
+    store.ensure_workspace("w1", quarterly_session())
+    result = next(row for row in store.summary("w1")["headline"] if row["origin"] == "2025Q4" and row["method"] == "frequency_severity")
+    result_edges = store.adjacency("w1", result["result_node_id"])["items"]
+    calibration = next(item for item in result_edges if item["node_class"] == "assumption/parameter" and item["label"] == "2025Q4 calibration 2023")
+    ancestors = store.adjacency("w1", calibration["node_id"])["items"]
+    cells_by_basis = {basis: set() for basis in ("incurred", "count")}
+    factor_ages_by_origin = {origin: {basis: set() for basis in ("incurred", "count")} for origin in ("2023Q1", "2023Q2", "2023Q3", "2023Q4")}
+    for item in ancestors:
+        metadata = item["metadata"]
+        if item["node_class"] == "triangle/cell":
+            payload = store.payload("w1", item["node_id"])
+            if payload["basis"] in cells_by_basis:
+                cells_by_basis[payload["basis"]].add(payload["origin"])
+        elif item["node_class"] == "calc/factor" and metadata.get("origin") in factor_ages_by_origin:
+            basis = metadata.get("component")
+            if basis == "historical_ultimate":
+                basis = "incurred"
+            elif basis == "historical_count":
+                basis = "count"
+            if basis in factor_ages_by_origin[metadata["origin"]]:
+                factor_ages_by_origin[metadata["origin"]][basis].add(int(item["label"].rsplit(" ", 1)[1]))
+
+    expected_origins = {"2023Q1", "2023Q2", "2023Q3", "2023Q4"}
+    assert cells_by_basis == {"incurred": expected_origins, "count": expected_origins}
+    for index, origin in enumerate(("2023Q1", "2023Q2", "2023Q3", "2023Q4")):
+        latest_age = 12 - index
+        expected_ages = set(range(latest_age, 13))
+        assert factor_ages_by_origin[origin] == {"incurred": expected_ages, "count": expected_ages}
 
 
 def test_idempotent_backfill_and_scenario_addition_preserve_baseline(tmp_path):
