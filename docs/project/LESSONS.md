@@ -1,5 +1,17 @@
 # Verified lessons
 
+## L006 — source-shaped fixtures must match actual field units (2026-10-11)
+
+The first EIOPA parser fixtures represented UFR/CRA/VA as decimal fractions. Importing the actual official 30 June 2026 workbook failed: C7 is 3.3 percent, C9 is 10 basis points and C10 is 14 basis points; the spot-rate rows are decimal annual-effective. The identifier correctly uses UFR 3.30. Lead reproduced this with the official archive; worker corrected parsing and regression fixtures. Both EUR variants now import 150 nodes, preserving field-specific units and matching the recorded content hashes in `implementation-2026-10-11.md`.
+
+Rule: validate source semantics against the actual public source, not only a fabricated fixture. Keep native metadata units distinct from computational spot-rate units. Source import success is not end-to-end app or actuarial-release certification.
+
+## L007 — stable cursors, not the first random page (2026-10-11)
+
+A repeat suite failed when the scenario graph test looked for one factor only on the first UUID-sorted summary page. Tests now traverse the explicit continuation cursor. A v2 same-snapshot marker also skipped repaired lineage; v3 migration updates affected node revisions while retaining old revisions/edges and the unchanged saved checkpoint. Regression checks cover both failure modes; the repaired full suite passes 108 tests.
+
+Rule: exercise all paginated pages and upgrades from previously materialised state. One green fresh-store run does not validate either path.
+
 ## L005 — syntax success does not validate a prototype (2026-09-27)
 
 The first Evidence Graph prototype passed `node --check` but Chrome showed empty adjacency and a crash when opening narrative provenance. Source inspection also found mismatched headline fields, cursor-generator shadowing and misleading invented trace metadata. Lead fixed lookup, schema, cursor and provenance handling; `prototype/evidence-drilldown/browser-smoke.cjs` covers the actual click path, forward/back pagination, missing/zero states and mobile overflow. Run meaningful browser interactions before reporting a prototype as working. Synthetic UI values must be labelled, and a placeholder blob must not claim to contain a real calculation trace.

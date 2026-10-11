@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from actuarial_library.evidence_graph import EvidenceGraphStore
+from actuarial_library.evidence_graph import GRAPH_MIGRATION_VERSION, EvidenceGraphStore
 
 
 def snapshot(scenarios=None):
@@ -26,9 +26,9 @@ def snapshot(scenarios=None):
         "config": {"paid": {"average": "volume"}, "incurred": {}, "count": {}},
         "baseline": {
             "results": [
-                {"origin": "2022", "method": "paid_cl", "ultimate": 180.0, "outstanding": 0.0, "reason": ""},
-                {"origin": "2023", "method": "paid_cl", "ultimate": 181.5, "outstanding": 71.5, "reason": ""},
-                {"origin": "2024", "method": "paid_cl", "ultimate": None, "outstanding": None, "reason": "No valid factor."},
+                {"origin": "2022", "method": "paid_cl", "ultimate": 180.0, "paid": 180.0, "incurred": 200.0, "outstanding": 0.0, "additional_reserve": -20.0, "reason": ""},
+                {"origin": "2023", "method": "paid_cl", "ultimate": 181.5, "paid": 165.0, "incurred": 185.0, "outstanding": 71.5, "additional_reserve": -3.5, "reason": ""},
+                {"origin": "2024", "method": "paid_cl", "ultimate": None, "paid": 120.0, "incurred": 140.0, "outstanding": None, "additional_reserve": None, "reason": "No valid factor."},
             ],
             "factors": [
                 {"basis": "paid", "development": 1, "selected": 1.5, "origins_used": "2022, 2023", "pairs": 2},
@@ -75,6 +75,207 @@ def test_materializes_result_factors_cells_and_scenario_scoped_membership(tmp_pa
     assert legacy["node_class"] == "tool/invocation"
     assert legacy["authorship"]["created_at"] == "unknown"
     assert store.payload("w1", legacy["node_id"]) == snapshot()["evidence"][0]
+
+
+def test_factor_lineage_covers_both_pair_cells_and_results_cover_latest_basis_cells(tmp_path):
+    store = EvidenceGraphStore(tmp_path / "lineage.sqlite3")
+    fixture = snapshot()
+    scenario = json.loads(json.dumps(fixture["baseline"]))
+    scenario["config"] = {"paid": {"excluded": [["2022", 1]]}}
+    scenario["factors"][0]["origins_used"] = "2023"
+    scenario["factors"][1]["origins_used"] = ""
+    fixture["scenarios"] = {"scenario_1": scenario}
+    store.ensure_workspace("w1", fixture)
+
+    scenario_factor = next(
+        node for node in store.summary("w1", "scenario_1")["nodes"]
+        if node["node_class"] == "calc/factor" and node["label"] == "paid age 1"
+    )
+    links = [
+        item for item in store.adjacency("w1", scenario_factor["node_id"])["items"]
+        if item["type"] == "used_observation"
+    ]
+    by_origin = {}
+    for link in links:
+        payload = store.payload("w1", link["node_id"])
+        by_origin.setdefault(payload["origin"], {})[link["metadata"].get("cell_role")] = (
+            payload,
+            link["metadata"],
+        )
+    assert set(by_origin["2022"]) == {"denominator", "numerator"}
+    assert {edge[1]["fitting_membership"] for edge in by_origin["2022"].values()} == {"excluded"}
+    assert {edge[1]["scenario_run_id"] for edge in by_origin["2022"].values()} == {"scenario_1"}
+    assert {edge[0]["development"] for edge in by_origin["2022"].values()} == {1, 2}
+    assert {edge[1]["fitting_membership"] for edge in by_origin["2023"].values()} == {"included"}
+
+    age_two = next(
+        node for node in store.summary("w1", "scenario_1")["nodes"]
+        if node["node_class"] == "calc/factor" and node["label"] == "paid age 2"
+    )
+    age_two_links = [
+        item for item in store.adjacency("w1", age_two["node_id"])["items"]
+        if item["type"] == "used_observation"
+    ]
+    assert {item["metadata"]["fitting_membership"] for item in age_two_links} == {"outside-window"}
+    assert {store.payload("w1", item["node_id"])["development"] for item in age_two_links} == {2, 3}
+
+    result = next(
+        row for row in store.summary("w1", "scenario_1")["headline"]
+        if row["origin"] == "2023" and row["method"] == "paid_cl"
+    )
+    result_links = store.adjacency("w1", result["result_node_id"])["items"]
+    cells_by_role = {
+        item["metadata"]["cell_role"]: store.payload("w1", item["node_id"])
+        for item in result_links
+        if item["type"] == "derived_from" and item["node_class"] == "triangle/cell"
+    }
+    assert cells_by_role["latest_paid"]["origin"] == "2023"
+    assert cells_by_role["latest_paid"]["development"] == 2
+    assert cells_by_role["latest_paid"]["value"] == 165.0
+    assert cells_by_role["latest_incurred"]["origin"] == "2023"
+    assert cells_by_role["latest_incurred"]["development"] == 2
+    assert cells_by_role["latest_incurred"]["value"] == 185.0
+
+
+def test_node_revision_changes_for_privacy_and_preserves_prior_metadata(tmp_path):
+    store = EvidenceGraphStore(tmp_path / "metadata.sqlite3")
+    base = {
+        "node_class": "calc/result",
+        "run_id": "baseline",
+        "local_key": "privacy-check",
+        "label": "Synthetic result",
+        "payload": {"value": 1},
+        "summary": {"value": 1},
+        "state": "observed",
+        "evidential_role": "calculation_evidence",
+        "authorship": {"actor": "reviewer", "role": "analyst", "action": "create", "created_at": "fixture"},
+        "private": False,
+    }
+    first = store.write_node("w1", base)
+    second = store.write_node("w1", {**base, "private": True})
+    assert second["revision"] == first["revision"] + 1
+    assert first["private"] is False
+    assert second["private"] is True
+    exported = store.export_review("w1")
+    exported_revisions = {(node["node_id"], node["revision"]) for node in exported["nodes"] if node["node_id"] == first["node_id"]}
+    assert exported_revisions == {(first["node_id"], 1)}
+
+    third = store.write_node("w1", {**base, "private": True, "state": "missing", "reason_code": "fixture_missing"})
+    assert third["revision"] == second["revision"] + 1
+    assert store.node("w1", first["node_id"], revision=1)["state"] == "observed"
+    assert store.node("w1", first["node_id"], revision=2)["state"] == "observed"
+    assert store.node("w1", first["node_id"], revision=3)["reason_code"] == "fixture_missing"
+
+
+def test_frequency_severity_uses_saved_history_and_count_mode_not_blanket_factors(tmp_path):
+    store = EvidenceGraphStore(tmp_path / "fs-lineage.sqlite3")
+    fixture = snapshot()
+    fixture["config"]["frequency_severity"] = {
+        "count_mode": "manual",
+        "expected_counts": {"2023": 5.0},
+        "historical_ultimates": {"2022": 420.0},
+        "historical_counts": {"2022": 2.0},
+        "rationale": "Synthetic manual calibration inputs.",
+    }
+    baseline = fixture["baseline"]
+    baseline["config"] = fixture["config"]
+    baseline["history"] = [{"target": "2023", "year": 2022, "ultimate": 420.0, "count": 2.0, "trend_factor": 1.0, "trended_severity": 210.0}]
+    baseline["factors"].append({"basis": "count", "development": 1, "selected": 1.5, "origins_used": "2022, 2023", "pairs": 2})
+    baseline["results"].extend([
+        {"origin": "2023", "method": "frequency_severity", "ultimate": 1050.0, "paid": 165.0, "incurred": 185.0, "outstanding": 885.0, "additional_reserve": 865.0, "expected_count": 5.0, "severity": 210.0, "prior_source": "frequency_severity", "prior": 1050.0, "history_years": "2022", "reason": ""},
+        {"origin": "2023", "method": "paid_bf", "ultimate": 1000.0, "paid": 165.0, "incurred": 185.0, "outstanding": 835.0, "additional_reserve": 815.0, "expected_count": 5.0, "prior_source": "manual", "prior": 1000.0, "history_years": "2022", "reason": ""},
+    ])
+    store.ensure_workspace("w1", fixture)
+    overview = store.summary("w1")
+    fs_result = next(row for row in overview["headline"] if row["origin"] == "2023" and row["method"] == "frequency_severity")
+    fs_edges = store.adjacency("w1", fs_result["result_node_id"])["items"]
+    assert not any(item["node_class"] == "calc/factor" for item in fs_edges)
+    history_edge = next(item for item in fs_edges if item["node_class"] == "assumption/parameter" and item["label"] == "2023 calibration 2022")
+    history_payload = store.payload("w1", history_edge["node_id"])
+    assert history_payload["ultimate"] == 420.0
+    count_input = next(item for item in fs_edges if item["node_class"] == "assumption/parameter" and item["label"] == "2023 expected count")
+    assert store.payload("w1", count_input["node_id"])["value"] == 5.0
+
+    bf_result = next(row for row in overview["headline"] if row["origin"] == "2023" and row["method"] == "paid_bf")
+    bf_edges = store.adjacency("w1", bf_result["result_node_id"])["items"]
+    assert any(item["type"] == "derived_from" and item["node_class"] == "assumption/parameter" and item["label"] == "2023 manual expected ultimate prior" for item in bf_edges)
+
+
+def test_prior_v2_marker_rebuilds_lineage_without_mutating_saved_results_or_history(tmp_path):
+    path = tmp_path / "old-preview.sqlite3"
+    store = EvidenceGraphStore(path)
+    fixture = snapshot()
+    fixture["config"]["frequency_severity"] = {
+        "count_mode": "manual",
+        "expected_counts": {"2023": 5.0},
+        "historical_ultimates": {"2022": 420.0},
+        "historical_counts": {"2022": 2.0},
+        "rationale": "Synthetic old-preview migration fixture.",
+    }
+    baseline = fixture["baseline"]
+    baseline["config"] = fixture["config"]
+    baseline["history"] = [{"target": "2023", "year": 2022, "ultimate": 420.0, "count": 2.0, "trend_factor": 1.0, "trended_severity": 210.0}]
+    baseline["factors"].append({"basis": "count", "development": 1, "selected": 1.5, "origins_used": "2022, 2023", "pairs": 2})
+    baseline["results"].append({"origin": "2023", "method": "frequency_severity", "ultimate": 1050.0, "paid": 165.0, "incurred": 185.0, "outstanding": 885.0, "additional_reserve": 865.0, "expected_count": 5.0, "severity": 210.0, "prior_source": "frequency_severity", "prior": 1050.0, "history_years": "2022", "reason": ""})
+    saved_baseline = json.loads(json.dumps(baseline))
+    store.ensure_workspace("w1", fixture)
+
+    overview = store.summary("w1")
+    factor = next(node for node in overview["nodes"] if node["node_class"] == "calc/factor" and node["label"] == "incurred age 1")
+    result_id = next(row["result_node_id"] for row in overview["headline"] if row["origin"] == "2023" and row["method"] == "frequency_severity")
+    old_payload = store.payload("w1", result_id)
+    store.write_edge("w1", {"type": "derived_from", "source_node_id": result_id, "source_revision": 1, "target_node_id": factor["node_id"], "target_revision": factor["revision"]})
+    store.write_edge("w1", {"type": "derived_from", "source_node_id": result_id, "source_revision": 1, "target_node_id": next(node["node_id"] for node in overview["nodes"] if node["node_class"] == "calc/factor" and node["label"] == "count age 1"), "target_revision": 1})
+
+    # Model the preview database written by graph v2: same snapshot hash, old
+    # marker, and result/factor records without the newer lineage version.
+    with store.connect() as db:
+        for node_class in ("calc/result", "calc/factor"):
+            rows = db.execute("SELECT node_id, revision, summary_json FROM evidence_graph_nodes WHERE workspace_id=? AND node_class=?", ("w1", node_class)).fetchall()
+            for row in rows:
+                old_summary = json.loads(row["summary_json"])
+                old_summary.pop("lineage_version", None)
+                db.execute("UPDATE evidence_graph_nodes SET summary_json=? WHERE workspace_id=? AND node_id=? AND revision=?", (json.dumps(old_summary, sort_keys=True, separators=(",", ":")), "w1", row["node_id"], row["revision"]))
+        db.execute("UPDATE evidence_graph_migrations SET migration_version='evidence-graph-v2' WHERE workspace_id='w1'")
+
+    store.ensure_workspace("w1", fixture)
+    current = store.node("w1", result_id, revision=2)
+    assert current["summary"]["lineage_version"] == GRAPH_MIGRATION_VERSION
+    assert store.node("w1", factor["node_id"], revision=2)["summary"]["lineage_version"] == GRAPH_MIGRATION_VERSION
+    assert store.payload("w1", result_id, revision=2) == old_payload
+    assert baseline == saved_baseline
+
+    latest_edges = store.adjacency("w1", result_id, revision=2)["items"]
+    assert not any(item["node_class"] == "calc/factor" for item in latest_edges)
+    assert any(item["type"] == "supersedes" and item["node_id"] == result_id and item["revision"] == 1 for item in latest_edges)
+    old_edges = store.adjacency("w1", result_id, revision=1)["items"]
+    assert {item["label"] for item in old_edges if item["node_class"] == "calc/factor"} >= {"incurred age 1", "count age 1"}
+    refreshed_headline = store.summary("w1")["headline"]
+    assert [(row["origin"], row["method"], row["ultimate"], row["outstanding"], row["result_node_id"]) for row in refreshed_headline] == [
+        (row["origin"], row["method"], row["ultimate"], row["outstanding"], row["result_node_id"])
+        for row in overview["headline"]
+    ]
+    with store.connect() as db:
+        marker = db.execute("SELECT migration_version FROM evidence_graph_migrations WHERE workspace_id='w1'").fetchone()
+    assert marker["migration_version"] == GRAPH_MIGRATION_VERSION
+
+
+def test_legacy_frequency_severity_without_saved_history_has_blocking_control(tmp_path):
+    store = EvidenceGraphStore(tmp_path / "missing-history.sqlite3")
+    fixture = snapshot()
+    fixture["baseline"]["results"].append({
+        "origin": "2023", "method": "frequency_severity", "ultimate": 1000.0,
+        "paid": 165.0, "incurred": 185.0, "outstanding": 835.0,
+        "additional_reserve": 815.0, "expected_count": 5.0, "severity": 200.0,
+        "history_years": "2022", "prior_source": "frequency_severity", "prior": 1000.0,
+    })
+    store.ensure_workspace("w1", fixture)
+    result = next(row for row in store.summary("w1")["headline"] if row["method"] == "frequency_severity")
+    edges = store.adjacency("w1", result["result_node_id"])["items"]
+    control = next(item for item in edges if item["type"] == "has_control" and item["node_class"] == "control/check")
+    assert store.node("w1", control["node_id"])["reason_code"] == "legacy_lineage_unavailable"
+    assert store.payload("w1", control["node_id"])["reason"] == "Stored result has calibration output but no matching saved history rows."
+    assert not any(item["node_class"] == "calc/factor" for item in edges)
 
 
 def test_idempotent_backfill_and_scenario_addition_preserve_baseline(tmp_path):

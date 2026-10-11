@@ -15,6 +15,7 @@ import uuid
 from pathlib import Path
 
 _PRIVATE_CLASSES = {"artifact/private", "source/private", "claims/private", "tool/invocation"}
+GRAPH_MIGRATION_VERSION = "evidence-graph-v3-lineage"
 _EDGE_PAIRS = {
     "derived_from": {
         ("triangle/cell", "data/source"),
@@ -162,19 +163,27 @@ class EvidenceGraphStore:
         supplied_identity = node.get("node_id")
         identity = supplied_identity or str(uuid.uuid4())
         existing = db.execute(
-            "SELECT node_id, revision, content_sha256, data_version, config_hash, label FROM evidence_graph_nodes "
+            "SELECT * FROM evidence_graph_nodes "
             "WHERE workspace_id=? AND run_id=? AND node_class=? AND local_key=? "
             "ORDER BY revision DESC LIMIT 1",
             (workspace_id, run_id, node_class, local_key),
         ).fetchone()
-        if (
+        unchanged = bool(
             existing
             and existing["content_sha256"] == content_sha256
             and existing["data_version"] == data_version
             and existing["config_hash"] == config_hash
             and existing["label"] == label
+            and existing["authorship"] == _canonical(authorship)
+            and existing["evidential_role"] == evidential_role
+            and existing["state"] == state
+            and existing["reason_code"] == reason_code
+            and existing["summary_json"] == _canonical(summary)
+            and existing["payload_json"] == _canonical(payload)
+            and bool(existing["private"]) == private
             and (supplied_identity is None or existing["node_id"] == identity)
-        ):
+        )
+        if unchanged:
             return self._node_record(
                 db.execute(
                     "SELECT * FROM evidence_graph_nodes WHERE workspace_id=? AND node_id=? AND revision=?",
@@ -338,8 +347,8 @@ class EvidenceGraphStore:
         })
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            marker = db.execute("SELECT snapshot_hash FROM evidence_graph_migrations WHERE workspace_id=?", (workspace_id,)).fetchone()
-            if marker and marker["snapshot_hash"] == snapshot_hash:
+            marker = db.execute("SELECT migration_version, snapshot_hash FROM evidence_graph_migrations WHERE workspace_id=?", (workspace_id,)).fetchone()
+            if marker and marker["migration_version"] == GRAPH_MIGRATION_VERSION and marker["snapshot_hash"] == snapshot_hash:
                 return
             built = {}
             source = self._new_node(
@@ -425,7 +434,10 @@ class EvidenceGraphStore:
                         exclusions.append((basis, excluded_origin, excluded_age, exclusion))
                         excluded_cell = cells.get((basis, excluded_origin, excluded_age))
                         if excluded_cell:
-                            self._write_edge(db, workspace_id, {"type": "excludes", "source_node_id": exclusion["node_id"], "source_revision": exclusion["revision"], "target_node_id": excluded_cell["node_id"], "target_revision": excluded_cell["revision"], "metadata": {"scenario_run_id": run_id}}, run_id)
+                            self._write_edge(db, workspace_id, {"type": "excludes", "source_node_id": exclusion["node_id"], "source_revision": exclusion["revision"], "target_node_id": excluded_cell["node_id"], "target_revision": excluded_cell["revision"], "metadata": {"scenario_run_id": run_id, "cell_role": "denominator"}}, run_id)
+                            numerator_cell = cells.get((basis, excluded_origin, excluded_age + 1))
+                            if numerator_cell and numerator_cell["state"] == "observed":
+                                self._write_edge(db, workspace_id, {"type": "excludes", "source_node_id": exclusion["node_id"], "source_revision": exclusion["revision"], "target_node_id": numerator_cell["node_id"], "target_revision": numerator_cell["revision"], "metadata": {"scenario_run_id": run_id, "cell_role": "numerator"}}, run_id)
                 result_nodes = {}
                 factor_nodes = {}
                 factor_rows = result.get("factors", [])
@@ -436,8 +448,9 @@ class EvidenceGraphStore:
                     factor = self._new_node(
                         db,
                         workspace_id,
-                        {"node_class": "calc/factor", "run_id": run_id, "data_version": data_version, "config_hash": run_config_hash, "local_key": factor_key, "label": f"{basis} age {age}", "evidential_role": "calculation_evidence", "state": "observed" if factor_row.get("selected") is not None else "missing", "reason_code": None if factor_row.get("selected") is not None else "factor_unavailable", "payload": factor_row, "summary": {"availability": "observed" if factor_row.get("selected") is not None else "missing", "validation": "valid" if factor_row.get("selected") is not None else "unavailable-blocked", "basis": basis, "development": age}},
+                        {"node_class": "calc/factor", "run_id": run_id, "data_version": data_version, "config_hash": run_config_hash, "local_key": factor_key, "label": f"{basis} age {age}", "evidential_role": "calculation_evidence", "state": "observed" if factor_row.get("selected") is not None else "missing", "reason_code": None if factor_row.get("selected") is not None else "factor_unavailable", "payload": factor_row, "summary": {"availability": "observed" if factor_row.get("selected") is not None else "missing", "validation": "valid" if factor_row.get("selected") is not None else "unavailable-blocked", "basis": basis, "development": age, "lineage_version": GRAPH_MIGRATION_VERSION}},
                     )
+                    self._supersede_previous(db, workspace_id, factor, run_id)
                     factor_nodes[factor_key] = factor
                     self._write_edge(db, workspace_id, {"type": "derived_from", "source_node_id": factor["node_id"], "source_revision": factor["revision"], "target_node_id": run_assumption["node_id"], "target_revision": run_assumption["revision"]}, run_id)
                     origins_used = {x.strip() for x in (factor_row.get("origins_used") or "").split(",") if x.strip()}
@@ -467,7 +480,30 @@ class EvidenceGraphStore:
                             membership = "outside-window"
                         else:
                             continue
-                        self._write_edge(db, workspace_id, {"type": "used_observation", "source_node_id": factor["node_id"], "source_revision": factor["revision"], "target_node_id": cell["node_id"], "target_revision": cell["revision"], "metadata": {"fitting_membership": membership, "scenario_run_id": run_id}}, run_id)
+                        if not valid_pair:
+                            continue
+                        common_metadata = {"fitting_membership": membership, "scenario_run_id": run_id}
+                        for cell_role, endpoint in (("denominator", cell), ("numerator", next_cell)):
+                            self._write_edge(db, workspace_id, {"type": "used_observation", "source_node_id": factor["node_id"], "source_revision": factor["revision"], "target_node_id": endpoint["node_id"], "target_revision": endpoint["revision"], "metadata": {**common_metadata, "cell_role": cell_role}}, run_id)
+
+                history_nodes = {}
+                for history_row in result.get("history", []):
+                    target_origin = str(history_row.get("target", "unknown"))
+                    year = str(history_row.get("year", "unknown"))
+                    history_key = f"frequency-severity-history:{target_origin}:{year}"
+                    history_node = self._new_node(db, workspace_id, {
+                        "node_class": "assumption/parameter",
+                        "run_id": run_id,
+                        "data_version": data_version,
+                        "config_hash": run_config_hash,
+                        "local_key": history_key,
+                        "label": f"{target_origin} calibration {year}",
+                        "evidential_role": "calculation_evidence",
+                        "state": "observed",
+                        "payload": history_row,
+                        "summary": {"availability": "observed", "validation": "valid", "parameter": "frequency_severity_calibration", "target": target_origin, "year": year},
+                    })
+                    history_nodes[(target_origin, year)] = history_node
 
                 for row in result.get("results", []):
                     origin, method = str(row.get("origin", "unknown")), str(row.get("method", "unknown"))
@@ -477,30 +513,92 @@ class EvidenceGraphStore:
                     result_node = self._new_node(
                         db,
                         workspace_id,
-                        {"node_class": "calc/result", "run_id": run_id, "data_version": data_version, "config_hash": run_config_hash, "local_key": key, "label": f"{origin} {method}", "evidential_role": "calculation_evidence", "state": state, "reason_code": reason_code, "payload": row, "summary": {"origin": origin, "method": method, "ultimate": row.get("ultimate"), "outstanding": row.get("outstanding"), "availability": state, "validation": "valid" if state == "observed" else "unavailable-blocked", "reason_code": reason_code}},
+                        {"node_class": "calc/result", "run_id": run_id, "data_version": data_version, "config_hash": run_config_hash, "local_key": key, "label": f"{origin} {method}", "evidential_role": "calculation_evidence", "state": state, "reason_code": reason_code, "payload": row, "summary": {"origin": origin, "method": method, "ultimate": row.get("ultimate"), "outstanding": row.get("outstanding"), "availability": state, "validation": "valid" if state == "observed" else "unavailable-blocked", "reason_code": reason_code, "lineage_version": GRAPH_MIGRATION_VERSION}},
                     )
+                    self._supersede_previous(db, workspace_id, result_node, run_id)
                     result_nodes[key] = result_node
                     self._write_edge(db, workspace_id, {"type": "derived_from", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"], "target_node_id": run_assumption["node_id"], "target_revision": run_assumption["revision"]}, run_id)
                     applicable = {method.split("_", 1)[0]} if method.startswith(("paid_", "incurred_")) else set()
-                    if method == "frequency_severity":
-                        applicable = {"incurred", "count"}
                     origin_index = origins.index(origin) if origin in origins else len(origins)
                     latest_age = len(origins) - origin_index
+                    for basis, row_field, role in (("paid", "paid", "latest_paid"), ("incurred", "incurred", "latest_incurred")):
+                        latest_cell = cells.get((basis, origin, latest_age))
+                        if row.get(row_field) is not None and latest_cell is not None:
+                            self._write_edge(db, workspace_id, {"type": "derived_from", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"], "target_node_id": latest_cell["node_id"], "target_revision": latest_cell["revision"], "metadata": {"cell_role": role, "scenario_run_id": run_id}}, run_id)
                     for factor_key, factor in factor_nodes.items():
                         factor_basis, factor_age = factor_key.rsplit(":", 1)
-                        age_is_applicable = method == "frequency_severity" or int(factor_age) >= latest_age
+                        age_is_applicable = int(factor_age) >= latest_age
                         if factor_basis in applicable and age_is_applicable:
                             self._write_edge(db, workspace_id, {"type": "derived_from", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"], "target_node_id": factor["node_id"], "target_revision": factor["revision"]}, run_id)
+                    if method == "frequency_severity":
+                        target_years = {year.strip() for year in str(row.get("history_years", "")).split(",") if year.strip()}
+                        linked_history = 0
+                        for (target_origin, year), history_node in history_nodes.items():
+                            if target_origin == origin and year in target_years:
+                                self._write_edge(db, workspace_id, {"type": "derived_from", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"], "target_node_id": history_node["node_id"], "target_revision": history_node["revision"]}, run_id)
+                                linked_history += 1
+                        fs_config = run_config.get("frequency_severity", {})
+                        count_mode = fs_config.get("count_mode", "developed") if isinstance(fs_config, dict) else "unknown"
+                        if count_mode == "developed":
+                            for factor_key, factor in factor_nodes.items():
+                                factor_basis, factor_age = factor_key.rsplit(":", 1)
+                                if factor_basis == "count" and int(factor_age) >= latest_age:
+                                    self._write_edge(db, workspace_id, {"type": "derived_from", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"], "target_node_id": factor["node_id"], "target_revision": factor["revision"], "metadata": {"evidence_role": "developed_count"}}, run_id)
+                        elif count_mode == "reported":
+                            latest_count = cells.get(("count", origin, latest_age))
+                            if latest_count and row.get("expected_count") is not None:
+                                self._write_edge(db, workspace_id, {"type": "derived_from", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"], "target_node_id": latest_count["node_id"], "target_revision": latest_count["revision"], "metadata": {"cell_role": "reported_count", "scenario_run_id": run_id}}, run_id)
+                        elif count_mode in {"manual", "exposure"}:
+                            count_values = fs_config.get("expected_counts", {}) if count_mode == "manual" else {"exposure": fs_config.get("exposures", {}).get(origin), "frequency": fs_config.get("frequencies", {}).get(origin)}
+                            if count_mode == "manual":
+                                count_values = {"expected_count": count_values.get(origin)}
+                            for parameter, value in count_values.items():
+                                if value is None:
+                                    continue
+                                parameter_node = self._new_node(db, workspace_id, {
+                                    "node_class": "assumption/parameter", "run_id": run_id, "data_version": data_version,
+                                    "config_hash": run_config_hash, "local_key": f"frequency-severity:{origin}:{parameter}",
+                                    "label": f"{origin} {parameter.replace('_', ' ')}", "evidential_role": "calculation_evidence",
+                                    "state": "observed", "payload": {"parameter": parameter, "origin": origin, "value": value, "count_mode": count_mode},
+                                    "summary": {"availability": "observed", "validation": "valid", "parameter": parameter, "origin": origin},
+                                })
+                                self._write_edge(db, workspace_id, {"type": "derived_from", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"], "target_node_id": parameter_node["node_id"], "target_revision": parameter_node["revision"]}, run_id)
+                        if row.get("severity") is not None and not linked_history:
+                            unknown = self._new_node(db, workspace_id, {
+                                "node_class": "control/check", "run_id": run_id, "data_version": data_version,
+                                "config_hash": run_config_hash, "local_key": f"result:{key}:history-lineage-unknown",
+                                "label": f"{origin} calibration lineage unavailable", "evidential_role": "calculation_evidence",
+                                "state": "missing", "reason_code": "legacy_lineage_unavailable",
+                                "payload": {"result_key": key, "reason": "Stored result has calibration output but no matching saved history rows."},
+                                "summary": {"availability": "missing", "validation": "unavailable-blocked", "reason_code": "legacy_lineage_unavailable"},
+                            })
+                            self._write_edge(db, workspace_id, {"type": "has_control", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"], "target_node_id": unknown["node_id"], "target_revision": unknown["revision"]}, run_id)
+                    elif method in {"paid_bf", "incurred_bf"} and row.get("prior_source") == "manual" and row.get("prior") is not None:
+                        prior_node = self._new_node(db, workspace_id, {
+                            "node_class": "assumption/parameter", "run_id": run_id, "data_version": data_version,
+                            "config_hash": run_config_hash, "local_key": f"manual-prior:{origin}",
+                            "label": f"{origin} manual expected ultimate prior", "evidential_role": "calculation_evidence",
+                            "state": "observed", "payload": {"parameter": "expected_ultimate_prior", "origin": origin, "value": row.get("prior"), "source": "manual"},
+                            "summary": {"availability": "observed", "validation": "valid", "parameter": "expected_ultimate_prior", "origin": origin},
+                        })
+                        self._write_edge(db, workspace_id, {"type": "derived_from", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"], "target_node_id": prior_node["node_id"], "target_revision": prior_node["revision"]}, run_id)
                     reason = row.get("reason")
                     if reason:
                         control_key = f"result:{key}:unavailable"
                         control = self._new_node(db, workspace_id, {"node_class": "control/check", "run_id": run_id, "data_version": data_version, "config_hash": run_config_hash, "local_key": control_key, "label": f"{origin} {method} availability", "evidential_role": "calculation_evidence", "state": "missing" if state == "missing" else "observed", "reason_code": reason_code or "warning", "payload": {"message": reason, "result_key": key}, "summary": {"availability": "missing" if state == "missing" else "observed", "validation": "unavailable-blocked" if state == "missing" else "valid", "reason_code": reason_code or "warning"}})
                         self._write_edge(db, workspace_id, {"type": "has_control", "source_node_id": result_node["node_id"], "source_revision": result_node["revision"], "target_node_id": control["node_id"], "target_revision": control["revision"]}, run_id)
 
+                for row in result.get("results", []):
+                    if row.get("method") in {"paid_bf", "incurred_bf"} and row.get("prior_source") == "frequency_severity":
+                        fs_result = result_nodes.get(f"{row.get('origin', 'unknown')}:frequency_severity")
+                        bf_result = result_nodes.get(f"{row.get('origin', 'unknown')}:{row.get('method')}")
+                        if fs_result and bf_result:
+                            self._write_edge(db, workspace_id, {"type": "based_on", "source_node_id": bf_result["node_id"], "source_revision": bf_result["revision"], "target_node_id": fs_result["node_id"], "target_revision": fs_result["revision"], "metadata": {"evidence_role": "expected_ultimate_prior"}}, run_id)
+
                 for index, warning in enumerate(result.get("warnings", [])):
                     control = self._new_node(db, workspace_id, {"node_class": "control/check", "run_id": run_id, "data_version": data_version, "config_hash": run_config_hash, "local_key": f"warning:{index}", "label": str(warning)[:160], "evidential_role": "calculation_evidence", "state": "observed", "reason_code": "warning", "payload": {"message": warning}, "summary": {"availability": "observed", "validation": "valid", "reason_code": "warning"}})
                 if run_id != "baseline":
-                    base = db.execute("SELECT node_id, revision, local_key FROM evidence_graph_nodes WHERE workspace_id=? AND run_id='baseline' AND node_class='calc/result' ORDER BY local_key, revision DESC", (workspace_id,)).fetchall()
+                    base = db.execute("SELECT node_id, MAX(revision) AS revision, local_key FROM evidence_graph_nodes WHERE workspace_id=? AND run_id='baseline' AND node_class='calc/result' GROUP BY local_key ORDER BY local_key", (workspace_id,)).fetchall()
                     for baseline_node in base:
                         current = result_nodes.get(baseline_node["local_key"])
                         if current:
@@ -522,9 +620,21 @@ class EvidenceGraphStore:
                 self._new_node(db, workspace_id, {"node_class": "artifact/private", "run_id": "baseline", "data_version": data_version, "config_hash": config_hash, "local_key": str(key), "label": "Private artifact", "evidential_role": "import_provenance", "private": True, "payload": {"content_sha256": digest, "blob_included": False}, "summary": {"availability": "observed", "validation": "valid", "private": True}})
             db.execute(
                 "INSERT INTO evidence_graph_migrations VALUES (?, ?, ?) "
-                "ON CONFLICT(workspace_id) DO UPDATE SET snapshot_hash=excluded.snapshot_hash",
-                (workspace_id, "evidence-graph-v2", snapshot_hash),
+                "ON CONFLICT(workspace_id) DO UPDATE SET migration_version=excluded.migration_version, snapshot_hash=excluded.snapshot_hash",
+                (workspace_id, GRAPH_MIGRATION_VERSION, snapshot_hash),
             )
+
+    def _supersede_previous(self, db, workspace_id, node, run_id):
+        if node["revision"] <= 1:
+            return
+        self._write_edge(db, workspace_id, {
+            "type": "supersedes",
+            "source_node_id": node["node_id"],
+            "source_revision": node["revision"],
+            "target_node_id": node["node_id"],
+            "target_revision": node["revision"] - 1,
+            "metadata": {"migration_version": GRAPH_MIGRATION_VERSION},
+        }, run_id)
 
     @staticmethod
     def _reason_code(reason):

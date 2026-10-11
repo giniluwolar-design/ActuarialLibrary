@@ -67,9 +67,14 @@ class DiscountCurve:
             checked[maturity] = rate
         if not isinstance(self.provenance, Mapping):
             raise TypeError("Explicit curve provenance is required.")
+        if any(not isinstance(key, str) or not isinstance(value, str) for key, value in self.provenance.items()):
+            raise TypeError("Curve provenance keys and values must be strings.")
         missing = [name for name in _PROVENANCE_FIELDS if not str(self.provenance.get(name, "")).strip()]
         if missing:
             raise ValueError("Curve provenance is missing: " + ", ".join(missing))
+        units = str(self.provenance["units"]).lower()
+        if "decimal" not in units or "annual effective" not in units:
+            raise ValueError("Curve provenance units must identify decimal annual-effective spot rates.")
         if self.provenance["variant"] != self.variant:
             raise ValueError("Curve provenance variant must match the curve variant.")
         object.__setattr__(self, "spot_rates", MappingProxyType(dict(sorted(checked.items()))))
@@ -166,20 +171,41 @@ def _json_value(value: Any) -> Any:
     raise ValueError(f"Payment row contains unsupported value type: {type(value).__name__}.")
 
 
+def _finite_sum(values: list[float]) -> float | None:
+    try:
+        result = math.fsum(values)
+    except OverflowError:
+        return None
+    return result if math.isfinite(result) else None
+
+
+def _finite_difference(left: float | None, right: float | None) -> float | None:
+    if left is None or right is None:
+        return None
+    result = left - right
+    return result if math.isfinite(result) else None
+
+
 def _group_totals(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, float | None]]:
-    groups: dict[str, dict[str, float | None]] = {}
+    grouped: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
-        group_key = str(row.get(key, ""))
-        group = groups.setdefault(group_key, {"undiscounted": 0.0, "present_value": 0.0})
-        group["undiscounted"] = float(group["undiscounted"]) + row["amount"]
-        if row["discounted_amount"] is None:
-            group["present_value"] = None
-        elif group["present_value"] is not None:
-            group["present_value"] = float(group["present_value"]) + row["discounted_amount"]
-    for group in groups.values():
-        group["discount_effect"] = (
-            None if group["present_value"] is None else float(group["undiscounted"]) - float(group["present_value"])
+        group_key = row["payment_date"][:4] if key == "payment_year" else str(row.get(key, ""))
+        grouped.setdefault(group_key, []).append(row)
+
+    groups: dict[str, dict[str, float | None]] = {}
+    for group_key, group_rows in grouped.items():
+        undiscounted = _finite_sum([row["amount"] for row in group_rows])
+        discounted_values = [row["discounted_amount"] for row in group_rows]
+        present_value = (
+            None
+            if any(value is None for value in discounted_values)
+            else _finite_sum([value for value in discounted_values if value is not None])
         )
+        groups[group_key] = {
+            "undiscounted": undiscounted,
+            "present_value": present_value,
+            "discount_effect": _finite_difference(undiscounted, present_value),
+        }
     return groups
 
 
@@ -226,10 +252,12 @@ def discount_payments(
         )
         normalized.append(item)
 
-    total_undiscounted = sum(row["amount"] for row in normalized)
+    total_undiscounted = _finite_sum([row["amount"] for row in normalized])
     status = "available"
     reason: str | None = None
-    if curve is None:
+    if total_undiscounted is None:
+        status, reason = "blocked", "NUMERICAL_OVERFLOW"
+    elif curve is None:
         status, reason = "blocked", "MISSING_CURVE"
     elif curve.valuation != valuation_date:
         status, reason = "blocked", "VALUATION_DATE_MISMATCH"
@@ -243,33 +271,45 @@ def discount_payments(
         except DiscountingError as error:
             status, reason = "blocked", error.code
         else:
-            for row, factor in zip(normalized, factors, strict=True):
-                row["discount_factor"] = factor
-                row["discounted_amount"] = row["amount"] * factor
+            products = [row["amount"] * factor for row, factor in zip(normalized, factors, strict=True)]
+            if not all(math.isfinite(product) for product in products):
+                status, reason = "blocked", "NUMERICAL_OVERFLOW"
+            else:
+                for row, factor, product in zip(normalized, factors, products, strict=True):
+                    row["discount_factor"] = factor
+                    row["discounted_amount"] = product
 
-    total_present_value = None if status == "blocked" else sum(row["discounted_amount"] for row in normalized)
+    by_origin = _group_totals(normalized, "origin")
+    by_payment_year = _group_totals(normalized, "payment_year")
+    total_present_value = (
+        None
+        if status == "blocked"
+        else _finite_sum([row["discounted_amount"] for row in normalized if row["discounted_amount"] is not None])
+    )
+    if status == "available" and (
+        total_present_value is None
+        or _finite_difference(total_undiscounted, total_present_value) is None
+        or any(
+            total is None
+            for group in (*by_origin.values(), *by_payment_year.values())
+            for total in group.values()
+        )
+    ):
+        status, reason = "blocked", "NUMERICAL_OVERFLOW"
+        for row in normalized:
+            row["discount_factor"] = None
+            row["discounted_amount"] = None
+        by_origin = _group_totals(normalized, "origin")
+        by_payment_year = _group_totals(normalized, "payment_year")
+        total_present_value = None
+
     totals = {
         "undiscounted": total_undiscounted,
         "present_value": total_present_value,
-        "discount_effect": None if total_present_value is None else total_undiscounted - total_present_value,
-        "by_origin": _group_totals(normalized, "origin"),
-        "by_payment_year": {},
+        "discount_effect": _finite_difference(total_undiscounted, total_present_value),
+        "by_origin": by_origin,
+        "by_payment_year": by_payment_year,
     }
-    # Group by calendar year, rather than individual date, for useful reconciliation summaries.
-    by_payment_year: dict[str, dict[str, float | None]] = {}
-    for row in normalized:
-        year = row["payment_date"][:4]
-        group = by_payment_year.setdefault(year, {"undiscounted": 0.0, "present_value": 0.0})
-        group["undiscounted"] = float(group["undiscounted"]) + row["amount"]
-        if row["discounted_amount"] is None:
-            group["present_value"] = None
-        elif group["present_value"] is not None:
-            group["present_value"] = float(group["present_value"]) + row["discounted_amount"]
-    for group in by_payment_year.values():
-        group["discount_effect"] = (
-            None if group["present_value"] is None else float(group["undiscounted"]) - float(group["present_value"])
-        )
-    totals["by_payment_year"] = by_payment_year
 
     metadata = {
         "valuation": valuation_date.isoformat(),
@@ -293,12 +333,20 @@ def _safe_xml(archive: zipfile.ZipFile, name: str) -> ElementTree.Element:
     if info.file_size > _MAX_XML_BYTES:
         raise ValueError("Workbook XML part exceeds the permitted size.")
     data = archive.read(info)
-    if b"<!DOCTYPE" in data.upper() or b"<!ENTITY" in data.upper():
-        raise ValueError("Workbook XML declarations are not accepted.")
     try:
-        return ElementTree.fromstring(data)
+        builder = _RejectingDtdTreeBuilder()
+        parser = ElementTree.XMLParser(target=builder)
+        parser.feed(data)
+        return parser.close()
+    except ValueError:
+        raise
     except ElementTree.ParseError as error:
         raise ValueError(f"Workbook contains malformed XML in {name}.") from error
+
+
+class _RejectingDtdTreeBuilder(ElementTree.TreeBuilder):
+    def doctype(self, name: str, public_id: str | None, system_id: str | None) -> None:
+        raise ValueError("Workbook XML declarations are not accepted.")
 
 
 def _cell_value(cell: ElementTree.Element, shared_strings: list[str]) -> str | None:
@@ -366,7 +414,11 @@ def import_eiopa_curve_xlsx(
             if relation.attrib.get("TargetMode") == "External":
                 raise ValueError("External workbook relationships are not accepted.")
             target = relation.attrib.get("Target", "")
-            resolved = posixpath.normpath(posixpath.join("xl", target.lstrip("/")))
+            resolved = (
+                posixpath.normpath(target.lstrip("/"))
+                if target.startswith("/")
+                else posixpath.normpath(posixpath.join("xl", target))
+            )
             if not resolved.startswith("xl/") or ".." in PurePosixPath(resolved).parts:
                 raise ValueError("Workbook contains an unsafe worksheet relationship.")
             relation_targets[relation.attrib.get("Id", "")] = resolved
@@ -413,11 +465,14 @@ def import_eiopa_curve_xlsx(
     alpha = metadata_number("C8")
     cra = metadata_number("C9")
     va = metadata_number("C10", blank_ok=variant == "no-VA")
-    if llp != 20 or convergence != 40 or ufr is None or alpha is None or cra is None:
+    numeric_metadata = (llp, convergence, ufr, alpha, cra)
+    if any(value is None or not math.isfinite(value) for value in numeric_metadata):
+        raise ValueError("Selected sheet has incomplete or non-finite curve source metadata.")
+    if llp != 20 or convergence != 40 or not math.isclose(ufr, 3.30, rel_tol=0, abs_tol=1e-12):
         raise ValueError("Selected sheet has incomplete or unsupported curve source metadata.")
     if variant == "no-VA" and va is not None:
         raise ValueError("No-VA sheet unexpectedly contains a VA adjustment.")
-    if variant == "with-VA" and (va is None or va <= 0):
+    if variant == "with-VA" and (va is None or not math.isfinite(va) or va <= 0):
         raise ValueError("With-VA sheet is missing its published VA adjustment.")
 
     spot_rates: dict[int, float] = {}
@@ -446,8 +501,15 @@ def import_eiopa_curve_xlsx(
         "llp_years": str(llp),
         "convergence_years": str(convergence),
         "ufr": str(ufr),
+        "ufr_percent": str(round(ufr, 8)),
+        "ufr_units": "percent",
         "alpha": str(alpha),
         "cra": str(cra),
+        "cra_basis_points": str(cra),
+        "cra_units": "basis points",
         "va": "none" if va is None else str(va),
+        "va_basis_points": "none" if va is None else str(va),
+        "va_units": "basis points",
+        "rate_units": "decimal fractions",
     }
     return DiscountCurve(valuation, "EUR", variant, spot_rates, provenance)

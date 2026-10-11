@@ -147,6 +147,116 @@ def test_only_explicitly_selected_rows_are_projected_and_partial_total_suppresse
     assert projected.full_total is None
 
 
+def test_projection_keeps_origin_with_complete_age_cdf_when_other_ages_missing():
+    triangle = annual_triangle(paid=[[0, 200, 240], [0, 240, np.nan], [150, np.nan, np.nan]])
+    result = run_reserving(
+        triangle,
+        AnalysisConfig(
+            paid=DevelopmentConfig(tail=1.25, rationale="Partial CDF fixture."),
+            selections={"2023": "paid_cl", "2025": "manual"},
+            manual_ultimates={"2025": 450},
+            selection_notes={"2025": "Explicitly selected manual ultimate."},
+        ),
+    )
+
+    projected = project_payments(
+        triangle,
+        result,
+        ProjectionConfig(
+            tail_timing="selected_next_development_period",
+            tail_rationale="Next period for the selected origin.",
+        ),
+    )
+
+    assert len(projected.rows) == 1
+    assert projected.rows[0]["origin"] == "2023"
+    assert projected.rows[0]["payment_date"] == "2026-12-31"
+    assert projected.rows[0]["amount"] == pytest.approx(60)
+    assert projected.included_origins == ["2023"]
+    assert {
+        (item["origin"], item["reason_code"])
+        for item in projected.excluded_origins
+    } == {("2024", "selection_missing"), ("2025", "paid_cdf_unavailable")}
+    assert projected.full_total is None
+
+
+@pytest.mark.parametrize(
+    ("value_type", "weight_semantics", "values", "expected_amounts"),
+    [
+        ("amount", None, [100, 200], [100, 200]),
+        ("weight", "future_conditional", [0.25, 0.75], [75, 225]),
+    ],
+)
+def test_external_amount_and_future_weights_do_not_require_paid_cdf(
+    value_type, weight_semantics, values, expected_amounts
+):
+    triangle = annual_triangle(paid=[[0, 200, 240], [0, 240, np.nan], [150, np.nan, np.nan]])
+    result = run_reserving(
+        triangle,
+        AnalysisConfig(
+            paid=DevelopmentConfig(tail=1.25, rationale="External schedule fixture."),
+            selections={"2025": "manual"},
+            manual_ultimates={"2025": 450},
+            selection_notes={"2025": "Independent selected ultimate."},
+        ),
+    )
+    pattern = ExternalOriginPattern(
+        value_type=value_type,
+        weight_semantics=weight_semantics,
+        components=[
+            ProjectionComponent(payment_date=date(2026, 3, 31), value=values[0]),
+            ProjectionComponent(payment_date=date(2026, 9, 30), value=values[1]),
+        ],
+        coverage_ages=[2, 3, 4],
+        source="External schedule",
+        rationale="Explicitly dated future pattern.",
+    )
+    projected = project_payments(
+        triangle,
+        result,
+        ProjectionConfig(output_grain="Q", external_patterns={"2025": pattern}),
+    )
+    assert [row["amount"] for row in projected.rows] == pytest.approx(expected_amounts)
+    assert projected.excluded_origins == [
+        {"origin": "2023", "reason_code": "selection_missing", "reason": "No explicit result selection exists for this origin."},
+        {"origin": "2024", "reason_code": "selection_missing", "reason": "No explicit result selection exists for this origin."},
+    ]
+
+
+def test_cumulative_external_pattern_only_requires_current_age_cdf():
+    triangle = annual_triangle(paid=[[0, 200, 240], [0, 240, np.nan], [150, np.nan, np.nan]])
+    result = run_reserving(
+        triangle,
+        AnalysisConfig(
+            paid=DevelopmentConfig(tail=1.25, rationale="Cumulative external fixture."),
+            selections={"2025": "manual"},
+            manual_ultimates={"2025": 450},
+            selection_notes={"2025": "Independent selected ultimate."},
+        ),
+    )
+    pattern = ExternalOriginPattern(
+        value_type="weight",
+        weight_semantics="cumulative_development",
+        components=[
+            ProjectionComponent(payment_date=date(2026, 3, 31), value=0.6),
+            ProjectionComponent(payment_date=date(2027, 3, 31), value=1.0),
+        ],
+        coverage_ages=[2, 3, 4],
+        source="Cumulative schedule",
+        rationale="Cumulative proportions use the valuation age CDF.",
+    )
+    projected = project_payments(
+        triangle,
+        result,
+        ProjectionConfig(external_patterns={"2025": pattern}),
+    )
+    assert not projected.rows
+    assert any(
+        item["origin"] == "2025" and item["reason_code"] == "paid_cdf_unavailable"
+        for item in projected.excluded_origins
+    )
+
+
 def test_annual_triangle_does_not_invent_quarterly_split():
     triangle = annual_triangle()
     projected = project_payments(

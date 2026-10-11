@@ -107,13 +107,16 @@ def _selected_rows(triangle: Triangle, result: AnalysisResult):
 def _paid_cdfs(result: AnalysisResult, n: int):
     paid = result.factors.filter(pl.col("basis") == "paid").sort("development")
     cdfs = [None] * n
+    seen = set()
     for row in paid.iter_rows(named=True):
         development = row.get("development")
         if isinstance(development, int) and 1 <= development <= n:
-            cdfs[development - 1] = row.get("cdf")
-    if len(cdfs) != n or any(not _finite(value) or float(value) <= 0 for value in cdfs):
-        return None
-    return [float(value) for value in cdfs]
+            if development in seen:
+                cdfs[development - 1] = None
+            else:
+                cdfs[development - 1] = row.get("cdf")
+                seen.add(development)
+    return cdfs
 
 
 def _currency_tolerance(currency, outstanding, amounts, minor_unit):
@@ -130,7 +133,10 @@ def _standard_components(
 ):
     n = len(triangle.origins)
     age = n - i
-    p = [1 / cdf for cdf in cdfs]
+    required_cdfs = cdfs[age - 1 :]
+    if any(not _finite(cdf) or float(cdf) <= 0 for cdf in required_cdfs):
+        return None, "paid_cdf_unavailable", f"Required paid CDF is unavailable for {origin} at age {age} or later."
+    p = [1 / float(cdf) if _finite(cdf) and float(cdf) > 0 else None for cdf in cdfs]
     increments = [p[j] - p[j - 1] for j in range(age, n)]
     tail_increment = 1 - p[-1]
     increments.append(tail_increment)
@@ -224,7 +230,10 @@ def _external_components(triangle, origin, outstanding, age, cdfs, pattern):
         coefficients = weights
         amounts = [outstanding * weight for weight in weights]
     else:
-        p_age = 1 / cdfs[age - 1]
+        current_cdf = cdfs[age - 1]
+        if not _finite(current_cdf) or float(current_cdf) <= 0:
+            return None, "paid_cdf_unavailable", f"Required paid CDF is unavailable for cumulative external pattern at {origin} age {age}."
+        p_age = 1 / current_cdf
         cumulative = [float(component.value) for component in components]
         if not cumulative or abs(cumulative[-1] - 1) > 1e-9:
             return None, "external_cumulative_incomplete", "Cumulative external proportions must end at one."
@@ -267,8 +276,6 @@ def project_payments(
     _require_matching_run(triangle, result)
     n = len(triangle.origins)
     cdfs = _paid_cdfs(result, n)
-    if cdfs is None:
-        raise ValueError("A complete finite selected paid CDF is required for projection.")
     selected = _selected_rows(triangle, result)
     unknown_patterns = set(config.external_patterns) - set(triangle.origins)
     if unknown_patterns:

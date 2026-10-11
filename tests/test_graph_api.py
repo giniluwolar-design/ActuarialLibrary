@@ -90,10 +90,28 @@ def test_scenario_fitting_membership_is_saved_and_run_scoped(client):
         },
     )
     assert changed.status_code == 200, changed.text
-    graph_root = root + "/graph?run=scenario_1"
-    scenario = client.get(graph_root).json()
+    # Force paging: opaque UUID ordering does not guarantee the desired factor
+    # stub appears on the first response page.
+    graph_root = root + "/graph?run=scenario_1&node_limit=1"
+    response = client.get(graph_root)
+    assert response.status_code == 200, response.text
+    scenario = response.json()
     assert scenario["run_id"] == "scenario_1"
-    factor_stub = next(item for item in scenario["nodes"] if item["node_class"] == "calc/factor" and item["label"] == "paid age 1")
+    factor_stub = next(
+        (item for item in scenario["nodes"] if item["node_class"] == "calc/factor" and item["label"] == "paid age 1"),
+        None,
+    )
+    cursor = scenario["node_pagination"]["next_cursor"]
+    while factor_stub is None and cursor:
+        response = client.get(graph_root + "&node_cursor=" + cursor)
+        assert response.status_code == 200, response.text
+        scenario = response.json()
+        factor_stub = next(
+            (item for item in scenario["nodes"] if item["node_class"] == "calc/factor" and item["label"] == "paid age 1"),
+            None,
+        )
+        cursor = scenario["node_pagination"]["next_cursor"]
+    assert factor_stub is not None
     adjacency = client.get(root + f"/graph/nodes/{factor_stub['node_id']}/adjacency").json()
     excluded = next(item for item in adjacency["items"] if item["type"] == "used_observation" and item["metadata"]["fitting_membership"] == "excluded")
     cell = client.get(root + f"/graph/nodes/{excluded['node_id']}/payload").json()
