@@ -278,6 +278,33 @@
                 <ul id="diagnostics"></ul>
               </details>
             </article>
+            <article id="evidence-review" class="card evidence-review" aria-label="Recorded evidence" hidden>
+              <div class="card-heading">
+                <div>
+                  <div class="eyebrow">FOLLOW THE RECORDED EVIDENCE</div>
+                  <h2 id="evidence-title" tabindex="-1">Result evidence</h2>
+                  <p>Saved calculation evidence, not a model explanation or final approval.</p>
+                </div>
+                <button id="close-evidence" class="text-button" type="button">Close review</button>
+              </div>
+              <nav id="evidence-breadcrumbs" class="evidence-breadcrumbs" aria-label="Evidence trail"></nav>
+              <p id="evidence-status" role="status"></p>
+              <dl id="evidence-summary" class="evidence-summary"></dl>
+              <details class="evidence-provenance">
+                <summary>Recorded identity & provenance</summary>
+                <pre id="evidence-provenance"></pre>
+              </details>
+              <h2>Connected evidence</h2>
+              <p>Open a dependency to inspect its assumptions, factors or observations. Incoming links show where this evidence is referenced.</p>
+              <div id="evidence-links" class="evidence-links"></div>
+              <button id="evidence-next" class="text-button" type="button" hidden>Load more connections</button>
+              <div class="evidence-actions">
+                <button id="evidence-load-payload" class="text-button" type="button">Load recorded payload</button>
+                <a id="evidence-export" class="text-button" href="#">Download local evidence review ↓</a>
+              </div>
+              <p class="footnote">Local review export may contain confidential values and labels. It is not a public or anonymised export.</p>
+              <pre id="evidence-payload" hidden></pre>
+            </article>
           </section>
           <section
             id="view-scenarios"

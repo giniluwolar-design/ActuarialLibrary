@@ -7,6 +7,8 @@ const state = {
   job: null,
   busy: false,
   selected: null,
+  evidence: null,
+  evidenceRequest: 0,
 };
 const names = {
   paid_cl: "Paid Chain Ladder",
@@ -236,14 +238,125 @@ function renderMethods() {
     )
     .join("");
   $("method-table").innerHTML =
-    '<table class="method-table"><thead><tr><th>Method</th><th>Ultimate</th><th>Outstanding</th><th>Additional reserve</th></tr></thead><tbody>' +
+    '<table class="method-table"><thead><tr><th>Method</th><th>Ultimate</th><th>Outstanding</th><th>Additional reserve</th><th>Evidence</th></tr></thead><tbody>' +
     rows
       .map(
         (r) =>
-          `<tr><td>${esc(names[r.method] || r.method)}${r.reason ? `<small class="method-reason">${esc(r.reason)}</small>` : ""}</td><td>${money(r.ultimate)}</td><td>${money(r.outstanding)}</td><td>${money(r.additional_reserve)}</td></tr>`,
+          `<tr><td>${esc(names[r.method] || r.method)}${r.reason ? `<small class="method-reason">${esc(r.reason)}</small>` : ""}</td><td>${money(r.ultimate)}</td><td>${money(r.outstanding)}</td><td>${money(r.additional_reserve)}</td><td><button type="button" class="text-button" data-evidence-method="${esc(r.method)}" data-evidence-origin="${esc(r.origin)}">Review evidence</button></td></tr>`,
       )
       .join("") +
     "</tbody></table>";
+}
+function closeEvidence() {
+  state.evidenceRequest += 1;
+  $("evidence-review").hidden = true;
+  state.evidence?.trigger?.focus();
+  state.evidence = null;
+}
+function evidencePath(node) {
+  return `/api/workspaces/${state.workspace.id}/graph/nodes/${encodeURIComponent(node.node_id)}`;
+}
+function evidenceLinks(items) {
+  return items.map((item) => `<button type="button" class="evidence-link" data-evidence-node="${esc(item.node_id)}" data-evidence-revision="${item.revision}" data-evidence-class="${esc(item.node_class)}"><small>${esc(item.direction)} · ${esc(item.type.replaceAll("_", " "))}</small><strong>${esc(item.label)}</strong><span>${esc(item.node_class)}${item.metadata?.fitting_membership ? ` · ${esc(item.metadata.fitting_membership)}` : ""}</span></button>`).join("");
+}
+function evidenceLabel(node) {
+  return node.node_class === "calc/result" && node.summary?.method
+    ? `${node.summary.origin} · ${names[node.summary.method] || node.summary.method}`
+    : node.label;
+}
+function evidenceValue(key, value) {
+  if (["ultimate", "outstanding", "additional_reserve"].includes(key) && typeof value === "number")
+    return new Intl.NumberFormat("en-GB", { style: "currency", currency: currency(), minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  if (key === "method") return names[value] || value;
+  if (typeof value === "object") return Array.isArray(value) ? `${value.length} recorded entries · load payload to inspect` : JSON.stringify(value);
+  return value;
+}
+function displayEvidence(node, page) {
+  const trail = state.evidence.trail;
+  $("evidence-title").textContent = evidenceLabel(node);
+  $("evidence-breadcrumbs").innerHTML = trail.map((entry, index) => `<button type="button" class="text-button" data-evidence-trail="${index}" ${index === trail.length - 1 ? 'aria-current="page"' : ""}>${esc(evidenceLabel(entry))}</button>`).join('<span aria-hidden="true">›</span>');
+  const fields = { ...node.summary, availability: node.state || node.summary?.availability, reason: node.reason_code || node.summary?.reason_code };
+  $("evidence-summary").innerHTML = Object.entries(fields).filter(([, value]) => value != null).map(([key, value]) => `<div><dt>${esc(key.replaceAll("_", " "))}</dt><dd>${esc(evidenceValue(key, value))}</dd></div>`).join("");
+  $("evidence-provenance").textContent = JSON.stringify({ node_id: node.node_id, revision: node.revision, run_id: node.run_id, node_class: node.node_class, data_version: node.data_version, config_hash: node.config_hash, content_sha256: node.content_sha256, authorship: node.authorship, evidential_role: node.evidential_role }, null, 2);
+  $("evidence-links").innerHTML = evidenceLinks(page.items);
+  $("evidence-next").hidden = !page.has_more;
+  state.evidence.cursor = page.next_cursor;
+  $("evidence-status").textContent = page.items.length ? `${page.items.length} connections loaded${page.has_more ? " · more available" : ""}.` : "No connections are recorded for this node.";
+  $("evidence-load-payload").disabled = false;
+  $("evidence-payload").hidden = true;
+  $("evidence-payload").textContent = "";
+  $("evidence-export").href = `/api/workspaces/${state.workspace.id}/graph/export?run=${encodeURIComponent(node.run_id)}`;
+  $("evidence-title").focus({ preventScroll: true });
+}
+async function openEvidenceNode(reference, trailIndex = null) {
+  const request = ++state.evidenceRequest;
+  $("evidence-review").hidden = false;
+  $("evidence-status").textContent = "Loading recorded evidence…";
+  $("evidence-links").innerHTML = "";
+  $("evidence-next").hidden = true;
+  $("evidence-load-payload").disabled = true;
+  $("evidence-payload").hidden = true;
+  const query = `?revision=${reference.revision}`;
+  try {
+    const [node, page] = await Promise.all([api(evidencePath(reference) + query), api(evidencePath(reference) + `/adjacency${query}&limit=50`)]);
+    if (request !== state.evidenceRequest || !state.evidence) return;
+    state.evidence.trail = trailIndex == null ? [...state.evidence.trail, node] : state.evidence.trail.slice(0, trailIndex + 1);
+    state.evidence.node = node;
+    displayEvidence(node, page);
+  } catch (error) {
+    if (request === state.evidenceRequest) $("evidence-status").textContent = `Evidence unavailable: ${error.message}`;
+  }
+}
+async function reviewResult(button) {
+  closeEvidence();
+  const request = ++state.evidenceRequest;
+  state.evidence = { trail: [], trigger: button, node: null, cursor: null };
+  $("evidence-review").hidden = false;
+  $("evidence-status").textContent = "Loading saved result references…";
+  try {
+    const summary = await api(`/api/workspaces/${state.workspace.id}/graph`);
+    if (request !== state.evidenceRequest) return;
+    const result = summary.headline.find(row => row.origin === button.dataset.evidenceOrigin && row.method === button.dataset.evidenceMethod);
+    if (!result) throw new Error("No stored result reference exists for this method and period.");
+    await openEvidenceNode({ node_id: result.result_node_id, revision: result.revision });
+    $("evidence-review").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    if (request === state.evidenceRequest) $("evidence-status").textContent = `Evidence unavailable: ${error.message}`;
+  }
+}
+async function moreEvidence() {
+  const evidence = state.evidence;
+  if (!evidence?.cursor || !evidence.node) return;
+  const request = state.evidenceRequest;
+  $("evidence-next").disabled = true;
+  try {
+    const page = await api(evidencePath(evidence.node) + `/adjacency?revision=${evidence.node.revision}&limit=50&cursor=${encodeURIComponent(evidence.cursor)}`);
+    if (request !== state.evidenceRequest) return;
+    $("evidence-links").insertAdjacentHTML("beforeend", evidenceLinks(page.items));
+    evidence.cursor = page.next_cursor;
+    $("evidence-next").hidden = !page.has_more;
+    $("evidence-status").textContent = `${$("evidence-links").children.length} connections loaded${page.has_more ? " · more available" : ""}.`;
+  } catch (error) {
+    if (request === state.evidenceRequest) $("evidence-status").textContent = error.message;
+  } finally {
+    $("evidence-next").disabled = false;
+  }
+}
+async function loadEvidencePayload() {
+  const node = state.evidence?.node;
+  if (!node) return;
+  const request = state.evidenceRequest;
+  $("evidence-load-payload").disabled = true;
+  try {
+    const payload = await api(evidencePath(node) + `/payload?revision=${node.revision}`);
+    if (request !== state.evidenceRequest) return;
+    $("evidence-payload").textContent = JSON.stringify(payload, null, 2);
+    $("evidence-payload").hidden = false;
+  } catch (error) {
+    if (request === state.evidenceRequest) $("evidence-status").textContent = error.message;
+  } finally {
+    $("evidence-load-payload").disabled = false;
+  }
 }
 function renderScenarios() {
   const w = state.workspace;
@@ -315,6 +428,7 @@ async function loadWorkspace(newView = false) {
         valuation: $("valuation").value,
         grain: $("grain").value,
       });
+    closeEvidence();
     state.workspace = w;
     remember("actuarial-workspace", w.id);
     $("observation").hidden = true;
@@ -448,7 +562,19 @@ document.addEventListener("click", (e) => {
   if (starter && !starter.disabled) ask(starter.dataset.prompt);
   const cell = e.target.closest("[data-origin]");
   if (cell) inspect(cell.dataset.origin, Number(cell.dataset.development));
+  const result = e.target.closest("[data-evidence-method]");
+  if (result) reviewResult(result);
+  const node = e.target.closest("[data-evidence-node]");
+  if (node) openEvidenceNode({ node_id: node.dataset.evidenceNode, revision: Number(node.dataset.evidenceRevision) });
+  const trail = e.target.closest("[data-evidence-trail]");
+  if (trail && state.evidence) {
+    const index = Number(trail.dataset.evidenceTrail);
+    openEvidenceNode(state.evidence.trail[index], index);
+  }
 });
+$("close-evidence").onclick = closeEvidence;
+$("evidence-next").onclick = moreEvidence;
+$("evidence-load-payload").onclick = loadEvidencePayload;
 $("setup").onsubmit = (e) => {
   e.preventDefault();
   loadWorkspace(true);

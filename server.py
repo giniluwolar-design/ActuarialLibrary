@@ -1,6 +1,8 @@
 """Single-user, loopback-only reserving workspace. Run one uvicorn worker."""
 
+import json
 import os
+import re
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -12,13 +14,14 @@ from uuid import uuid4
 
 import numpy as np
 import polars as pl
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from actuarial_library import AnalysisConfig, build_triangles, export_results
 from actuarial_library.agent import AnalystSession, ToolArgs, local_models
+from actuarial_library.evidence_graph import EvidenceGraphStore
 from actuarial_library.exploration import factor_triangle
 from actuarial_library.review import method_impact, observation_pairs
 from actuarial_library.workspace import WorkspaceStore, decode_session, encode_session
@@ -181,6 +184,81 @@ def read_workspace(key: str):
             # Checkpoints are consistent even while model inference is in progress.
             return workspace_view(key, decode_session(store.get("sessions", key)))
         return workspace_view(key, get_session(key))
+
+
+def graph_for_saved_workspace(key: str, run: str = "baseline"):
+    """Backfill the graph from the saved checkpoint, never from a live session."""
+    with lock:
+        try:
+            snapshot = store.get("sessions", key)
+        except KeyError as exc:
+            raise HTTPException(404, "Saved workspace was not found.") from exc
+        if run != "baseline" and run not in snapshot.get("scenarios", {}):
+            raise HTTPException(404, "Saved scenario was not found.")
+        graph = EvidenceGraphStore(store.path)
+        graph.ensure_workspace(key, snapshot)
+        return graph
+
+
+@app.get("/api/workspaces/{key}/graph")
+def graph_summary(
+    key: str,
+    run: str = "baseline",
+    node_limit: int = Query(default=50, ge=1, le=200),
+    node_cursor: str | None = None,
+):
+    graph = graph_for_saved_workspace(key, run)
+    try:
+        return graph.summary(key, run, node_limit=node_limit, node_cursor=node_cursor)
+    except ValueError as exc:
+        raise HTTPException(400 if node_cursor is not None else 422, str(exc)) from exc
+
+
+@app.get("/api/workspaces/{key}/graph/nodes/{node_id}")
+def graph_node(key: str, node_id: str, revision: int = Query(default=1, ge=1)):
+    graph = graph_for_saved_workspace(key)
+    try:
+        return graph.node(key, node_id, revision)
+    except KeyError as exc:
+        raise HTTPException(404, "Graph node revision was not found.") from exc
+
+
+@app.get("/api/workspaces/{key}/graph/nodes/{node_id}/adjacency")
+def graph_adjacency(
+    key: str,
+    node_id: str,
+    revision: int = Query(default=1, ge=1),
+    limit: int = Query(default=200, ge=1, le=2000),
+    cursor: str | None = None,
+):
+    graph = graph_for_saved_workspace(key)
+    try:
+        return graph.adjacency(key, node_id, revision=revision, limit=limit, cursor=cursor)
+    except KeyError as exc:
+        raise HTTPException(404, "Graph node revision was not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(400 if cursor is not None else 422, str(exc)) from exc
+
+
+@app.get("/api/workspaces/{key}/graph/nodes/{node_id}/payload")
+def graph_payload(key: str, node_id: str, revision: int = Query(default=1, ge=1)):
+    graph = graph_for_saved_workspace(key)
+    try:
+        return graph.payload(key, node_id, revision)
+    except KeyError as exc:
+        raise HTTPException(404, "Graph node revision was not found.") from exc
+
+
+@app.get("/api/workspaces/{key}/graph/export")
+def graph_export(key: str, run: str = "baseline"):
+    graph = graph_for_saved_workspace(key, run)
+    content = json.dumps(graph.export_review(key, run), ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    filename_run = re.sub(r"[^A-Za-z0-9_.-]", "_", run)[:64] or "baseline"
+    return Response(
+        content,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="evidence-graph-{key[:8]}-{filename_run}.json"'},
+    )
 
 
 @app.get("/api/workspaces/{key}/observations")
