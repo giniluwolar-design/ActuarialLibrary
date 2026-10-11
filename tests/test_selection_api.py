@@ -204,6 +204,24 @@ def test_selection_payload_validation_and_unknown_origin(client):
     ).status_code == 403
 
 
+def test_oversized_integer_manual_ultimate_is_controlled_422_without_state_change(client):
+    workspace = create_workspace(client)
+    key = workspace["id"]
+    before = client.get(f"/api/workspaces/{key}").json()
+    response = choose(
+        client,
+        key,
+        origin=workspace["origins"][-1],
+        method="manual",
+        manual_ultimate=10**400,
+    )
+    assert response.status_code == 422
+    after = client.get(f"/api/workspaces/{key}").json()
+    assert after["analysis"] == before["analysis"]
+    assert after["selection"] is None
+    assert after["selection_history"] == []
+
+
 def test_unavailable_saved_method_cannot_be_selected(client):
     workspace = create_workspace(client)
     key = workspace["id"]

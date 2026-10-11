@@ -101,6 +101,14 @@ def test_manual_selection_rejects_overflowed_saved_arithmetic_without_mutating_r
     assert result.results.equals(original_results)
 
 
+def test_manual_selection_rejects_integer_too_large_for_float_as_value_error():
+    result = saved_result()
+    original = result.to_dict()
+    with pytest.raises(ValueError, match="finite manual ultimate"):
+        select_reserve(result, "2025", "manual", "Oversized integer.", 10**400)
+    assert result.to_dict() == original
+
+
 def test_selection_clone_isolates_saved_metadata_and_frames():
     result = saved_result()
     result.metadata["nested"] = {"labels": ["saved"]}

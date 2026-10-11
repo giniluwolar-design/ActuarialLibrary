@@ -48,6 +48,19 @@ def encode_session(session):
     }
 
 
+def decode_analysis(result) -> AnalysisResult:
+    """Restore an exact saved analysis without executing a calculation."""
+    return AnalysisResult(
+        **{
+            name: pl.DataFrame(result[name], infer_schema_length=None)
+            for name in ("results", "factors", "history")
+        },
+        config=AnalysisConfig.model_validate(result["config"]),
+        warnings=result["warnings"],
+        metadata=result["metadata"],
+    )
+
+
 def decode_session(data):
     raw = dict(data["triangle"])
     claims = raw.pop("claims", None)
@@ -68,19 +81,8 @@ def decode_session(data):
     session.scenarios = {}
     session.artifacts = {}
 
-    def result_from_dict(result):
-        return AnalysisResult(
-            **{
-                name: pl.DataFrame(result[name], infer_schema_length=None)
-                for name in ("results", "factors", "history")
-            },
-            config=AnalysisConfig.model_validate(result["config"]),
-            warnings=result["warnings"],
-            metadata=result["metadata"],
-        )
-
-    session.baseline = result_from_dict(data["baseline"])
-    session.scenarios = {key: result_from_dict(result) for key, result in data.get("scenarios", {}).items()}
+    session.baseline = decode_analysis(data["baseline"])
+    session.scenarios = {key: decode_analysis(result) for key, result in data.get("scenarios", {}).items()}
     session.artifacts = {
         key: {**value, "content": base64.b64decode(value["content"])}
         for key, value in data.get("artifacts", {}).items()

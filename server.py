@@ -29,7 +29,7 @@ from actuarial_library.export import safe_csv
 from actuarial_library.models import AnalysisResult, StrictModel
 from actuarial_library.review import method_impact, observation_pairs
 from actuarial_library.selections import select_reserve
-from actuarial_library.workspace import WorkspaceStore, decode_session, encode_session
+from actuarial_library.workspace import WorkspaceStore, decode_analysis, decode_session, encode_session
 
 ROOT = Path(__file__).parent
 store = WorkspaceStore(os.environ.get("ACTUARIAL_WORKSPACE_DB", ROOT / "local_runs/workspace.sqlite3"))
@@ -227,7 +227,7 @@ def save_selection(key: str, request: SelectionRequest):
         if request.expected_revision != revision:
             raise HTTPException(409, f"Selection revision changed; expected {revision}.")
         session = get_session(key)
-        source_analysis = analysis_from_snapshot(previous["analysis"]) if previous else session.baseline
+        source_analysis = decode_analysis(previous["analysis"]) if previous else session.baseline
         try:
             analysis = select_reserve(
                 source_analysis,
@@ -521,20 +521,9 @@ def download(key: str, file_id: str):
         )
 
 
-def analysis_from_snapshot(payload):
-    return AnalysisResult(
-        results=pl.DataFrame(payload["results"], infer_schema_length=None),
-        factors=pl.DataFrame(payload["factors"], infer_schema_length=None),
-        history=pl.DataFrame(payload["history"], infer_schema_length=None),
-        warnings=payload["warnings"],
-        config=AnalysisConfig.model_validate(payload["config"]),
-        metadata=payload["metadata"],
-    )
-
-
 def export_selection(record):
     authorship = record["authorship"]
-    analysis = analysis_from_snapshot(record["analysis"])
+    analysis = decode_analysis(record["analysis"])
     metadata = {
         **analysis.metadata,
         "selection_revision": record["revision"],

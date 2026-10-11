@@ -15,7 +15,7 @@ def _finite(value):
         return False
     try:
         return math.isfinite(float(value))
-    except (TypeError, ValueError):
+    except (OverflowError, TypeError, ValueError):
         return False
 
 
