@@ -1,5 +1,11 @@
 # Verified lessons
 
+## L008 — integer validation must include float-conversion overflow (2026-10-11)
+
+Both independent selection reviews reproduced a manual JSON integer of `10**400` passing the strict integer input type, then raising `OverflowError` during `float(value)`. The finite-value guard caught only type/value errors, so the request returned 500 rather than a controlled rejection. No selection was persisted. The worker added failing library/API regressions, extended the conversion guard, and verified 28 focused tests passing: library `ValueError`, API 422, unchanged baseline and empty selection history. Root also observed the two regressions fail before restarting verification with the repair.
+
+Rule: finite-number validation includes conversion failures, not just `isfinite` after conversion. Test oversized integers as well as NaN/Infinity and arithmetic overflow at the public input seam. An input type is not a finite float64 guarantee.
+
 ## L006 — source-shaped fixtures must match actual field units (2026-10-11)
 
 The first EIOPA parser fixtures represented UFR/CRA/VA as decimal fractions. Importing the actual official 30 June 2026 workbook failed: C7 is 3.3 percent, C9 is 10 basis points and C10 is 14 basis points; the spot-rate rows are decimal annual-effective. The identifier correctly uses UFR 3.30. Lead reproduced this with the official archive; worker corrected parsing and regression fixtures. Both EUR variants now import 150 nodes, preserving field-specific units and matching the recorded content hashes in `implementation-2026-10-11.md`.
