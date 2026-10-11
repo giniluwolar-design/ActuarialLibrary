@@ -2,6 +2,12 @@
 
 Founder instruction, 7 October 2026: implement the agreed Actuarial Workbench, retain a lead architect/orchestrator and lightweight project manager, delegate bounded implementation to cheaper Codex models, and continue from mobile while the local computer sleeps. Cloud preparation is development infrastructure; the actuarial app itself remains local-first.
 
+## Current execution gate — 11 October 2026
+
+GitHub connection permissions are verified (push/admin). The existing remote executor reports `environment_offline`; its earlier mortality/annuity commit `04f2460` is not published, and recovery is unverified. Preserve that task; recover its exact files before review or integration. The local foundation is separately available in draft PR #14. No cloud work is currently confirmed active and no phone push has been tested.
+
+Official OpenAI documentation describes published Codex Cloud environments and reopening the same task on web/mobile: [Cloud environments](https://learn.chatgpt.com/docs/environments/cloud-environments). Check Settings > Codex Cloud > Environments for an available published environment. A new task starts separate state; it does not recover this unpublished commit. The documented default seven-day saved-state window is not proof that this executor's files are recoverable. Do not invent a local scheduled workaround or promise 24/7 execution.
+
 ## Start
 
 Read AGENTS.md, the repository actuarial-platform skill, HANDOVER.md and LESSONS.md. Existing GitHub issues #1 and #4–#13 are the design map. The corrected Wave 2 contracts, rather than superseded drafts, govern implementation. Personal skills on a developer's computer do not automatically transfer to cloud tasks.

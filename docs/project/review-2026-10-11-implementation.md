@@ -32,3 +32,49 @@ Summary: Standards 3 reproduced defects + 1 optional smell, worst within axis: p
 Assigned bounded fixes to the original cheaper workers, with failing regression checks required before fixes. A repeat full-suite run separately exposed a flaky scenario test: it searched only the first randomly UUID-ordered summary page. Tests now follow explicit pagination; one green run was insufficient. Root also verified the actual official EIOPA workbook and found fixture metadata units differed from the source; fixtures/parser now preserve native percent/basis-point units. v3 migration repairs previously materialised lineage without deleting history or altering saved calculation checkpoints.
 
 Fresh repaired-state checks: 108 Python tests passed (123 dependency deprecation warnings); changed Python Ruff and JavaScript syntax passed. Actual synthetic browser route/download, refreshed identity, keyboard and mobile-width checks passed without page errors. Both official EUR curve variants import 150 nodes. Independent re-review remains pending. These checks do not close unfinished app paths, mortality-source rights or release gates.
+
+## Standards — re-review at 644dd31
+
+No remaining actionable documented-standard violation found in the bounded repairs. Original findings resolved:
+
+- Immutable metadata changes now create new revisions. Independently reproduced private false → true plus changed summary: revision 1 → 2; revision 1 retained original metadata.
+- UTF-16 DTD/entity input raises “Workbook XML declarations are not accepted.” before expansion. Parser-level rejection replaces encoding-sensitive scanning.
+- Original `1e308`/−0.99 PV overflow returns blocked / `NUMERICAL_OVERFLOW`, preserves undiscounted input and omits non-finite discounted values. Overflowing origin subtotal with finite overall net also blocks and passes strict JSON serialization.
+- Optional duplicated aggregation resolved: origin/year totals share `_group_totals`.
+
+No new material smell requiring action. The graph backfill remains large/dictionary-heavy, but saved-evidence migration responsibility and bounded repairs do not establish a documented breach or justify restructuring here.
+
+Independent verification: 75 focused graph/API/projection/discount tests passed, two dependency warnings. Read-only review; no private/runtime data inspected or files edited. Lead full suite/browser evidence remains separate. Verdict covers foundation, not unfinished app panels, source rights, model reliability or release readiness.
+
+## Spec — re-review at 644dd31
+
+Original numerator/latest paid-incurred, manual FS/prior, partial-CDF, XLSX absolute path, native finite metadata and discount overflow reproductions repaired; 75 focused tests passed. One remaining lineage gap reproduced: default annual-triangle/config 2025 FS 136.9047619 links count factors but not latest count at age 1. Historical calibration nodes (2023 ultimate 250/count 3; 2024 ultimate 297.619/count 3) have no outgoing arithmetic ancestors. Assigned bounded follow-up and migration regression to graph worker. Final repaired-state Spec verdict remains pending; no release readiness claim.
+
+At 644dd31: Standards 0 remaining findings; Spec 1 remaining finding, within-axis worst: missing target-count and historical-calibration lineage. Original counts above remain historical evidence, not erased or combined.
+
+## Final follow-up — 82cc9c0
+
+Graph worker repaired the remaining FS lineage: latest target count, historical incurred/count components with only consumed factor ages, explicit per-component overrides, all origins sharing a calibration year, and missing-source controls anchored to the affected result. v4 migration preserves prior revisions/edges/payloads and is idempotent. Focused graph/API checks: 24 passed. Lead reran the full suite: 112 passed, 123 dependency warnings; changed Python Ruff, JavaScript syntax and actual restarted browser/download checks passed. Final independent reports follow.
+
+## Standards — final pinned 82cc9c0
+
+Documented violations: none found in this bounded repair.
+
+- FS calibration lineage maps each source year to all corresponding origins. Manual historical overrides reference parameter nodes; developed components reference actual latest basis cells and relevant factors.
+- Missing source mappings produce typed `legacy_lineage_unavailable` controls through permitted result → control edges; no invented ancestry.
+- v4 migration creates revised calibration/result evidence and preserves previous payloads/revisions/edges. Regression coverage checks upgrade idempotency and unchanged saved results.
+- Earlier Standards clearance for immutable metadata, XML declaration rejection and numerical overflow remains applicable.
+
+Possible material smells: none requiring action. Dictionary-heavy migration remains a maintainability consideration, not a documented breach; this repair does not justify broad restructuring.
+
+Independent graph/API check: 24 passed, two dependency warnings. No edits or private/runtime access. Uncommitted documentation excluded from pinned review. Clears Standards for the foundation only; full-suite/browser and remaining product/release work stay separate.
+
+## Spec — final pinned 82cc9c0
+
+No remaining findings for the reviewed bounded slice. Previous FS lineage finding resolved by reproduction.
+
+The original 2025 FS result remains 136.9047619047619, now linked to latest count and historical incurred/count inputs with correct age-specific factors. Manual overrides replace only corresponding developed dependencies; quarterly calibration includes all four source origins. Unavailable historical lineage creates typed controls on the FS result without invented ancestors.
+
+Independently exercised actual `644dd31` v3 code → v4 migration: old metadata/payloads/edges preserved; repaired revisions added; repeat same-snapshot migration is a no-op. Focused graph/API suite: 24 passed, two dependency warnings. No scope creep identified. Confirms focused repair, not completion of unfinished workflows or public-release acceptance.
+
+Final summary: Standards 0 remaining actionable findings (no within-axis worst); Spec 0 remaining findings (no within-axis worst). Each axis remains separate; full-release gates remain open.

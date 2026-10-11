@@ -8,7 +8,7 @@ Rule: validate source semantics against the actual public source, not only a fab
 
 ## L007 — stable cursors, not the first random page (2026-10-11)
 
-A repeat suite failed when the scenario graph test looked for one factor only on the first UUID-sorted summary page. Tests now traverse the explicit continuation cursor. A v2 same-snapshot marker also skipped repaired lineage; v3 migration updates affected node revisions while retaining old revisions/edges and the unchanged saved checkpoint. Regression checks cover both failure modes; the repaired full suite passes 108 tests.
+A repeat suite failed when the scenario graph test looked for one factor only on the first UUID-sorted summary page. Tests now traverse the explicit continuation cursor. A v2 same-snapshot marker also skipped repaired lineage; v3 then v4 migrations update affected node revisions while retaining old revisions/edges and the unchanged saved checkpoint. Regression checks cover both failure modes and the later FS lineage upgrade; the final repaired suite passes 112 tests.
 
 Rule: exercise all paginated pages and upgrades from previously materialised state. One green fresh-store run does not validate either path.
 
