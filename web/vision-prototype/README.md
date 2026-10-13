@@ -22,7 +22,9 @@ Open `http://127.0.0.1:8766/index.html?variant=A`; replace A with B or C. The ru
 
 ## GitHub visual previews
 
-The branch workflow renders public synthetic desktop and mobile screenshots. These are previews, not a hosted interactive application.
+The branch workflow renders public synthetic desktop and mobile screenshots. These are previews, not a hosted interactive application. The images below were rendered from commit `0d6777b` in [GitHub run 38442380270](https://github.com/giniluwolar-design/ActuarialLibrary/actions/runs/38442380270) and inspected by the lead. Desktop screenshots are full-page captures; the floating prototype selector stays anchored to the captured viewport. Scroll in the interactive preview to reveal content beneath it.
+
+[Draft design review #15](https://github.com/giniluwolar-design/ActuarialLibrary/pull/15) is based on the reviewed foundation, not merged or deployed.
 
 ![A — Spatial library](previews/library-A.png)
 ![B — Quiet worktable](previews/library-B.png)

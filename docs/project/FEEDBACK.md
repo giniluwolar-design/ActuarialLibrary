@@ -6,7 +6,7 @@
 - Interpretation: supersedes F001's fixed visual-preservation constraint for a founder-reviewed redesign; does not discard the deterministic library or established workflows. Reserving and annuity are the two top-level entrances; projection is nested within reserving. Use restrained typography, original sculptural geometry, progressive disclosure and inspectable outcomes.
 - Acceptance: founder chooses a visual direction; each tool opens clear result/evidence detail on desktop/mobile. Production acceptance separately requires actual revision-pinned evidence, numerical checks, labelled expert/scenario choices, representative performance measurements and defined partner/marriage semantics. No universal edge-case, audit-certification or speed claim from a mockup.
 - Status: three isolated read-only synthetic variants implemented; founder acceptance and production integration pending.
-- Verification: `web/vision-prototype/README.md`, `VISION_SCOPE_RECONCILIATION.md`; lead exercised desktop scenario/partner drill-downs, Escape/focus restoration, and 390px library/tool layouts. Syntax checks pass; CI-rendered source previews pending publication verification.
+- Verification: draft PR #15; `web/vision-prototype/README.md`, `VISION_SCOPE_RECONCILIATION.md`; lead exercised desktop scenario/partner drill-downs, Escape/focus restoration, and 390px library/tool layouts. Syntax checks pass; six CI-rendered images at `0d6777b` inspected from run `38442380270`. Existing CI suite/package builds pass on all three OSes; not numerical certification of authored preview figures or expanded scope.
 
 ## F001 — preserve the redesigned workbench
 
