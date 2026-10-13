@@ -56,4 +56,8 @@ Normal `PYTHONPATH=src python -m unittest discover -s tests -p test_synthetic_an
 
 One-case formula workbook, API/download, graph persistence/pagination, visual acceptance and model reliability remain unverified/outside this ownership. No whole-life or real-AG result, performance benchmark, production/audit certification, unlimited execution or phone push claim. Source-rights and marriage semantics remain later lead gates.
 
-Next delivery step is supported GitHub API publication with exact tree/ref read-back, then draft PR for source/actuarial review against the reviewed foundation. Shell Git push remains blocked. Do not merge, deploy or close issues.
+## Publication / next review
+
+Supported GitHub API publication succeeded: code commit `2e3a6382534a07c0e2773372c8ab4c1570ce2306`, tree `80fcab593813a28adf73763ad833e8197293c652`, parent the exact reviewed base. Local `git write-tree` and remote returned tree matched. Independently read remote branch ref and commit metadata back and checked both tree and parent before opening draft PR #16: https://github.com/giniluwolar-design/ActuarialLibrary/pull/16. Local branch imports/matches the exact published commit. Shell Git push remains blocked; API publication is the verified delivery mechanism. The PR has only the five owned source/test/documentation files. This publication-note follow-up changes documentation only.
+
+Next: lead reviews exact source and tests; reruns normal focused/full suite and Ruff in an installed environment; retains formula-workbook/integration gates and draft status. Do not merge, deploy or close issues.
