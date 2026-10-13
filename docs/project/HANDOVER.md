@@ -1,5 +1,14 @@
 # Current handover
 
+## Independent cloud annuity milestone — 13 October 2026
+
+- Dedicated cloud chat has real shell access. Source base is exactly reviewed `414ef6ae83be9c5e9c4f0d0b5b071bac2ae56041`, tree `87ce51f6fce01b1a8ec33ad98ecb0fcf3411adfc`, on separate branch `codex/synthetic-annuity-calendar-v2` in `/workspace/ActuarialLibrary-annuity`. The original older checkout and its blocker notes remain preserved separately.
+- Shell Git fetch failed twice because configured proxy port 8080 is unreachable. Supported GitHub connector retrieved the complete non-truncated tree and 28 missing text blobs; every blob, rebuilt tree and exact unsigned commit object matched its Git SHA. Existing binary public fixture blobs already matched. No proxy changes, private source/data or credentials accessed. This is independent implementation, not recovery/reconstruction of the old offline task or unpublished commit.
+- Added only new `mortality.py`, `annuity.py` and focused public-module tests, plus this handover and `implementation-2026-10-13-annuity.md`. Existing owned modules were absent. Protected server/models/web/graph/projection/discount/reserving files unchanged.
+- Numerical module verification: 36 unittest cases pass through isolated loading of the actual modules; all six corrected-v2 grid literals reproduced with 50-digit Decimal arithmetic, plus independent real-calendar daily references. Syntax compilation and diff-whitespace check pass. Standard package import is blocked by missing Polars; pytest/Ruff are absent. No full-suite, normal package integration, workbook, API/download, model, visual or performance verification claimed. See milestone for reproducible commands and exact limits.
+- Pending: lead source/actuarial review, installed-environment focused/full suite and Ruff, one-case formula-workbook gate, integration ownership and source-rights/whole-life decisions. Marriage frequency and marriage/divorce/remarriage interpretation remains pending; no invented age gaps/rates/eligibility. New vision is two top-level tools, reserving and annuity, with progressive evidence, scenarios and human judgement; lead's separate visual directions remain untouched.
+- Exact next action: verify remote publication of this exact tree via supported GitHub connector, then create draft PR against `codex/evidence-cashflow-foundation`. If publication fails, retain source and report the remaining write-access unblock. No merge/deployment/issue closure. Shell push, phone push and unlimited runtime unverified.
+
 ## Objective
 
 Use the Wayfinder process to produce a decision-complete product and architecture blueprint for an open-source Actuarial Workbench. The first public milestone contains three bounded professional workflows: P&C reserving, triangle-derived reserving cash-flow projection, and annuity-factor calculation. Preserve the separate person-level prototype for later work.
