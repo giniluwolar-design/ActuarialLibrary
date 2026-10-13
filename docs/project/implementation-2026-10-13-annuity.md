@@ -1,5 +1,9 @@
 # Synthetic calendar annuity milestone — 13 October 2026
 
+## Conditional assumptions follow-up
+
+After lint repair `843099a2dc1157d994aac9e83d8ca1779806771f`, lead identified that regular traces asserted an unspecified partner. Shared assumptions now describe participant conditional survival/weights and calendar/scope conventions only. Regular adds its participant-alive contingency; partner adds partner conditional survival, both lives initially alive, fixed eligible partner, weight products/composition independence, lifetime independence and participant-dead/partner-alive contingency. No arithmetic changes. A focused public-seam regression failed before repair and now passes; 39 isolated module cases pass. Lead reports installed-package full pytest at exact older `7e87068`: 176 passed, 123 dependency warnings, 47 subtests passed using isolated synthetic temporary storage/cache disabled. That report removes the older revision's package-access gap, without establishing verification of these later repairs. Lead must rerun changed-file Ruff and normal/full tests at this follow-up. Cloud dependency limitation, formula-workbook/integration gates, founder visual preference and marriage semantics remain pending.
+
 ## Lead-requested lint repair
 
 Follow-up to published head `7e8706865fe8567832d0b60caa4ec37877903299`: addressed all 11 reported sites in owned files. Existing `discounting.py` uses `TypeError` for invalid date/provenance/numeric types. The six reported invalid-type guards now follow that convention; invalid numeric values/ranges/nonfinite numbers/conversion overflow remain `ValueError`. Negative tests retain rejection assertions with explicit exception types and add source/date seam checks. Three assumption-string concatenations parenthesized, test dict constructor replaced by literal, intentionally naive datetime fixture retained with one documented `# noqa: DTZ001`. No lint configuration or numerical arithmetic changed.

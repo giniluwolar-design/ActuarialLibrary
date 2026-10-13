@@ -349,11 +349,7 @@ def calculate_annuity(
     )
     assumptions = (
         "Truncated finite horizon; residual survival is exposed and no death is forced at the horizon.",
-        "Survival is conditional on each life being alive at valuation.",
-        (
-            "Both lives are initially alive; the partner is known and fixed eligible; marriage, divorce, "
-            "and remarriage are not modelled (pending extensions)."
-        ),
+        "Participant survival is conditional on the participant being alive at valuation.",
         "Indexation is zero.",
         (
             "Mortality exposure splits at birthdays and 1 January using actual segment days / "
@@ -361,14 +357,25 @@ def calculate_annuity(
         ),
         "A 29 February birth date has a 1 March birthday in non-leap years.",
         "Payments are full annual-benefit instalments on scheduled dates; no first-period proration.",
-        (
-            "Each life mixes sex-specific factors in factor space; partner composition uses products "
-            "of per-life weights."
-        ),
-        "The selected sex compositions for participant and partner are independent.",
-        "Participant and partner lifetimes are independent.",
-        "Partner benefit requires the participant dead and partner alive at payment time.",
+        "Participant sex-specific factors are mixed in factor space using participant weights.",
     )
+    if factor_type == "regular":
+        assumptions += ("Regular benefit requires the participant alive at payment time.",)
+    else:
+        assumptions += (
+            "Partner survival is conditional on the partner being alive at valuation.",
+            (
+                "Both lives are initially alive; the partner is known and fixed eligible; marriage, divorce, "
+                "and remarriage are not modelled (pending extensions)."
+            ),
+            (
+                "Partner sex-specific factors are mixed in factor space; partner composition uses products "
+                "of per-life weights."
+            ),
+            "The selected sex compositions for participant and partner are independent.",
+            "Participant and partner lifetimes are independent.",
+            "Partner benefit requires the participant dead and partner alive at payment time.",
+        )
     used_cells: dict[tuple[str, int, int], MortalityCell] = {}
     for branch in branches:
         for trace in (branch.participant, branch.partner):

@@ -292,9 +292,26 @@ class FactorEvidenceTests(unittest.TestCase):
         self.assertAlmostEqual(result.residual_survival[1][2], .8, places=15)
         self.assertTrue(result.mortality_cells)
         words = ' '.join(result.assumptions).lower()
-        for term in ('conditional', 'indexation', 'pending', 'composition', 'independen'):
+        for term in ('conditional', 'indexation', 'participant', 'factor space'):
             with self.subTest(term=term):
                 self.assertIn(term, words)
+
+    def test_assumptions_describe_only_the_actual_factor_type(self):
+        regular_result = regular()
+        regular_words = ' '.join(regular_result.assumptions).lower()
+        for term in ('partner', 'both lives', 'independent', 'dead'):
+            with self.subTest(regular_must_omit=term):
+                self.assertNotIn(term, regular_words)
+        self.assertIn('participant', regular_words)
+        self.assertIn('alive at valuation', regular_words)
+        self.assertTrue(all(branch.partner is None for branch in regular_result.branches))
+        partner_result = regular(factor_type='partner', partner_dob=date(1968, 1, 1))
+        partner_words = ' '.join(partner_result.assumptions).lower()
+        for term in ('both lives', 'fixed eligible', 'products', 'sex compositions',
+                     'lifetimes are independent', 'participant dead and partner alive', 'pending'):
+            with self.subTest(partner_must_include=term):
+                self.assertIn(term, partner_words)
+        self.assertTrue(all(branch.partner is not None for branch in partner_result.branches))
 
     def test_duplicate_cells_dates_and_unknown_sexes_rejected(self):
         with self.assertRaises(ValueError):
