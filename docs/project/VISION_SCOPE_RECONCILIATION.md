@@ -1,0 +1,58 @@
+# Vision and scope reconciliation
+
+**Recorded:** 13 October 2026
+**Purpose:** Reconcile the founder's latest product vision with the accepted Wayfinder map and corrected contracts. This is a scope and acceptance record, not an implementation or calculation certification. GitHub issue mapping below does not change issue status.
+
+## Current product direction
+
+| State | Reconciled direction |
+|---|---|
+| **Decided** | Build an actuarial workbench, not an ordinary marketing website. The visual direction is a spacious, futuristic, three-dimensional workspace with few persistent controls; detailed tool information appears when relevant and remains accessible. The interface is a shell around a deterministic Python library, not a substitute for it. |
+| **Decided** | The two top-level workflow entrances are reserving and annuity. Triangle-derived cash-flow projection is nested within reserving, as accepted under contract #6; it is not a third top-level entrance. |
+| **Decided** | Expert judgement must be expressible in every applicable workflow. Users can make explicit selections and compare labelled scenarios with rationale. The analyst may investigate and propose; it cannot silently make or approve a final reserve. |
+| **Decided** | Performance on large portfolios is a product objective. Claims such as “fast” require repeatable measurements on named dataset sizes and hardware; no benchmark result or target is asserted here. A representative baseline can be designed and measured in parallel with UI work. |
+| **Decided** | Results need an explainable, navigable evidence trail. This supports professional review; it is not a formal approval, immutable audit-log, or regulatory certification claim. |
+| **Decided direction; actuarial choice pending** | Expand partner-life and old-age-pension (OP) cash-flow capabilities, including marriage-frequency assumptions. The current annuity-v2 contract remains the bounded baseline until the extension's actuarial semantics are approved. |
+| **Implemented, per 11 Oct handover** | Foundation includes deterministic reserving, saved human selections, evidence graph, and pure projection/discount modules. These are partial workflows, not the complete envisioned workbench. A separate throwaway visual prototype is being prepared; it is for design choice, not actuarial use. |
+| **Verified, dated evidence** | Handover records 140 passing tests, clean Ruff/JS syntax, independent standards/spec review, and desktop/mobile synthetic selection journeys with downloads at commit `6cf6507` (11 Oct). That evidence does not validate the expanded vision, large-data performance, annuity extension, formal auditability, or current prototype acceptance. |
+| **Verified, lead-reported 12 Oct** | The dedicated private development environment was published through durable host onboarding; 33 tests and an actual synthetic report ZIP succeeded, and the publication UI was verified. Phone-to-end-to-end execution remains unverified. This does not recover the separate unpublished annuity source at `04f2460`, which remains unavailable for review/integration. |
+| **Blocked, narrowly** | Only the expanded partner marriage-frequency calculation awaits an actuarial choice: (A) exogenous age-based marriage/eligibility probabilities for a defined partner benefit, or (B) a dynamic multi-state model with marriage, divorce, and remarriage transitions. Current annuity-v2 specifies a fixed eligible partner and no remarriage. The unrecovered `04f2460` source is a separate implementation/recovery gap, not evidence that the new cloud environment is unavailable. |
+| **Next** | Founder selects a visual direction from the three synthetic prototype options. The prototype uses immutable worked fixtures and cannot mutate real saved runs. Lead then applies the chosen direction to one real, inspectable reserving journey, retaining the human-selection and evidence contracts. In parallel, propose and measure a representative performance baseline; set any speed target after reviewing that evidence. Resolve option A/B before implementing marriage-frequency behavior. |
+
+## Acceptance examples
+
+These examples describe observable product behavior. Example data are synthetic unless explicitly sourced; none implies that the corresponding capability is already implemented.
+
+1. **Reserve selection:** “For the 2025 valuation, compare paid Chain Ladder and paid BF for origin 2024. Keep the baseline unchanged, select BF for this origin with rationale ‘portfolio review’, and show the resulting outstanding and additional reserve.” The response records the user choice, preserves the previous result, exposes the assumptions and supporting cells, and offers the exact saved revision for download. It does not describe the action as formal approval.
+2. **Investigation scenario:** “Show the impact of excluding paid development 1→2 for origin 2023, with rationale ‘documented data correction’; do not change my selection.” The scenario is labelled, comparable to the unchanged baseline, and linked to the affected observations and factors. An unusual observation is not deleted automatically.
+3. **Evidence trail:** “Why is this the selected result?” opens the actual saved result, chosen method, assumptions, fitted factors, triangle cells, controls, and relevant source references. Missing evidence is shown as unavailable; generated narrative is not calculation evidence.
+4. **Annuity and partner extension:** “Compare annual and monthly primo payments for this participant and named eligible partner; show the mortality basis, dates, weights, survival terms, and downloadable schedule.” This is within the direction of current annuity-v2 only where its fixed-partner assumptions apply. Marriage-frequency, divorce, remarriage, or changing eligibility behavior stays unavailable until the pending actuarial choice and its data contract are accepted.
+5. **Large portfolio:** “Run the same validated workflow on the named benchmark portfolio.” Acceptance requires a reproducible record of portfolio size, hardware/software, import/triangle/calculation/export timings, and peak memory, with repeated runs and comparison to an agreed target. No absolute speed promise is made before the target and benchmark are defined.
+
+## Accepted contracts and boundaries
+
+- **Reserving:** [`domain-contract.md`](../../skills/actuarial-platform/references/domain-contract.md) governs deterministic methods, data semantics, explicit human selections, and no hidden final method mix. Preserve baseline and keep scenarios distinct from valuation movements.
+- **Cash-flow projection:** [`cashflow-projection-spec-v2.md`](../contracts/cashflow-projection-spec-v2.md) governs projection from selected outstanding reserves, paid-pattern derivation, explicit tail timing, quarterly evidence gates, signed values, partial totals, and provenance. The founder's workflow priority does not weaken these controls.
+- **Annuity:** [`annuity-factors-spec-v2.md`](../contracts/annuity-factors-spec-v2.md) governs finite-horizon calendar schedules, per-life weights, explicit assumptions, and traceable factors. Its fixed eligible partner/no-remarriage scope is the current bounded contract, not a claim that broader household states are solved.
+- **Evidence:** [`evidence-graph-contract-v2.md`](../contracts/evidence-graph-contract-v2.md) governs immutable revision-pinned nodes and edges, authorship, source lineage, export boundaries, and migration. “Explainable audit trail” in product language means inspectable linked evidence under this contract, not a formal audit or approval system.
+- **Agent boundary:** the model may explain, investigate, and create labelled scenarios through typed tools. Deterministic code owns validation and arithmetic. No shell access for the analyst, hidden cloud fallback, or hosted tracing for claim data.
+
+## Wayfinder issue map
+
+These links preserve the existing issue map; this document neither edits nor closes tickets.
+
+| Issue | Relationship to reconciled vision | Acceptance still required |
+|---|---|---|
+| [#1 — Wayfinder blueprint](https://github.com/giniluwolar-design/ActuarialLibrary/issues/1) | Product-level architecture and release sequence | Reflect reserving and annuity as the two top-level entrances, with projection nested under reserving; align the blueprint with the founder-selected visual direction. |
+| [#4 — Evidence Graph](https://github.com/giniluwolar-design/ActuarialLibrary/issues/4) | Inspectable, revision-pinned evidence behind results | Integrate evidence into representative reserving and annuity journeys; test real links, exports, and missing-evidence states. |
+| [#5 — Drill-down prototype](https://github.com/giniluwolar-design/ActuarialLibrary/issues/5) | Visual exploration of linked evidence and the proposed visual language | Founder chooses among the current prototype directions; synthetic examples must remain labelled and must not imply working calculations. |
+| [#6 — Reserving projection](https://github.com/giniluwolar-design/ActuarialLibrary/issues/6) | Reserving cash-flow capability, explicit tail choices, and schedules | Complete user selection → projection → discount evidence/download path, including quarterly evidence gates and the synthetic Q2 2026 reference case. |
+| [#8 — Annuity factors](https://github.com/giniluwolar-design/ActuarialLibrary/issues/8) | Second prioritized workflow and bounded factor calculation | Meet corrected finite-horizon contract and independent references; separately decide whether and how household marriage states extend it. |
+| [#9 — AG ingestion](https://github.com/giniluwolar-design/ActuarialLibrary/issues/9) | Mortality-source ingestion and provenance | Resolve source terms, caching and redistribution rights; never infer permission from public availability or a working parser. |
+| [#12 — Analyst contract](https://github.com/giniluwolar-design/ActuarialLibrary/issues/12) | Human judgement, labelled scenarios, evidence questions, and tool boundary | Ensure analyst proposals cannot change human selections or imply approval; cover both prioritized workflows and explicit unavailable answers. |
+| [#13 — Release gates](https://github.com/giniluwolar-design/ActuarialLibrary/issues/13) | Measured performance, reproducibility, operational and user-path evidence | Propose and run a reproducible benchmark, then set targets from evidence; verify install and actual downloads, review privacy/source rights, and keep calculation, integration, model, visual, and release evidence distinct. |
+
+## Decisions still owned by the founder
+
+1. **Partner marriage model:** choose age-based probabilities for a defined partner benefit, or a dynamic multi-state model including marriage/divorce/remarriage. The choice changes states, required data, assumptions, and cash-flow timing; it cannot be inferred from the interface request. Until resolved, retain the fixed-partner/no-remarriage v2 baseline and label the extension as pending.
+2. **Large-data performance target:** review a reproducible baseline proposal and measured results, then set any acceptable timing/memory target. Baseline work and UI implementation can proceed before that target is selected.

@@ -1,0 +1,41 @@
+name: Vision prototype previews
+
+on:
+  push:
+    branches: [codex/actuarial-library-vision]
+    paths:
+      - web/vision-prototype/*.html
+      - web/vision-prototype/*.css
+      - web/vision-prototype/*.js
+      - scripts/run_vision_prototype.py
+      - scripts/capture_vision_preview.cjs
+      - .github/workflows/vision-preview.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the isolated browser renderer
+        run: |
+          npm install --prefix "$RUNNER_TEMP/vision-render" playwright@1.62.1
+          "$RUNNER_TEMP/vision-render/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Capture public synthetic previews
+        env:
+          NODE_PATH: ${{ runner.temp }}/vision-render/node_modules
+        run: |
+          python3 scripts/run_vision_prototype.py > "$RUNNER_TEMP/vision-http.log" 2>&1 &
+          node scripts/capture_vision_preview.cjs vision-previews
+      - uses: actions/upload-artifact@v4
+        with:
+          name: actuarial-library-vision-previews
+          path: vision-previews/*.png
+          if-no-files-found: error
