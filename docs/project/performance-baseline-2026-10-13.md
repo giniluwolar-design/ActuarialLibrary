@@ -35,6 +35,8 @@ Syntax compilation and diff-whitespace checks pass. CLI help and invalid-budget 
 
 ## Reproduction / next
 
+Published via supported GitHub connector at `6aa2d04e3aaf1b96a060c151ea1c2d8bdaef4f85`, tree `927c35ed2f2074d08097df10a74867e6a8c7c8ce`, parent exact `6598174`; local/remote tree hashes and remote ref/commit parent independently verified. [Draft PR #17](https://github.com/giniluwolar-design/ActuarialLibrary/pull/17) created after verification, against the separate engine branch. Publication-note follow-up also makes missing caller-selected output directories; existing-file exclusive creation remains enforced. No shell Git push claimed.
+
 In the installed public project, run once with the short default budget:
 
 ```bash

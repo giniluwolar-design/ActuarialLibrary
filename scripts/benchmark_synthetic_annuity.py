@@ -161,6 +161,8 @@ def main():
         return
     if args.output and args.output.exists():
         parser.error("Output already exists; choose a new path to preserve existing evidence.")
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     report = {"schema": "synthetic-annuity-baseline-v1", "identity": identity(),
               "budget_seconds": args.budget_seconds, "requested_repeats": args.repeats,
