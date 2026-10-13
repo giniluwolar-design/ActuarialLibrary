@@ -9,13 +9,13 @@ from datetime import date, datetime
 
 def _calendar_date(value: object, name: str) -> date:
     if not isinstance(value, date) or isinstance(value, datetime):
-        raise ValueError(f"{name} must be a calendar date (not a datetime).")
+        raise TypeError(f"{name} must be a calendar date (not a datetime).")
     return value
 
 
 def _checked_q(value: object) -> float:
     if isinstance(value, (bool, str, bytes, bytearray)):
-        raise ValueError("Mortality q must be a finite number from 0 through 1.")
+        raise TypeError("Mortality q must be a finite number from 0 through 1.")
     try:
         q = float(value)
     except (TypeError, ValueError, OverflowError) as error:
@@ -165,7 +165,7 @@ def survival_trace(
     actual segment days divided by 365 or 366 days in that calendar year.
     """
     if not isinstance(source, MortalitySource):
-        raise ValueError("An explicit MortalitySource is required.")
+        raise TypeError("An explicit MortalitySource is required.")
     dob = _calendar_date(dob, "Date of birth")
     valuation_date = _calendar_date(valuation_date, "Valuation date")
     horizon = _calendar_date(horizon, "Horizon")

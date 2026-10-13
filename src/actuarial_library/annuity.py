@@ -11,13 +11,13 @@ from .mortality import MortalityCell, MortalitySource, SurvivalTrace, survival_t
 
 def _date(value: object, name: str) -> date:
     if not isinstance(value, date) or isinstance(value, datetime):
-        raise ValueError(f"{name} must be a calendar date (not a datetime).")
+        raise TypeError(f"{name} must be a calendar date (not a datetime).")
     return value
 
 
 def _finite_number(value: object, name: str) -> float:
     if isinstance(value, (bool, str, bytes, bytearray)):
-        raise ValueError(f"{name} must be a finite number.")
+        raise TypeError(f"{name} must be a finite number.")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as error:
@@ -236,7 +236,7 @@ def calculate_annuity(
     leaves mortality branches and undiscounted payment probabilities inspectable.
     """
     if not isinstance(source, MortalitySource):
-        raise ValueError("An explicit MortalitySource is required.")
+        raise TypeError("An explicit MortalitySource is required.")
     participant_dob = _date(participant_dob, "Participant date of birth")
     valuation_date = _date(valuation_date, "Valuation date")
     commencement_date = _date(commencement_date, "Commencement date")
@@ -350,15 +350,21 @@ def calculate_annuity(
     assumptions = (
         "Truncated finite horizon; residual survival is exposed and no death is forced at the horizon.",
         "Survival is conditional on each life being alive at valuation.",
-        "Both lives are initially alive; the partner is known and fixed eligible; marriage, divorce, "
-        "and remarriage are not modelled (pending extensions).",
+        (
+            "Both lives are initially alive; the partner is known and fixed eligible; marriage, divorce, "
+            "and remarriage are not modelled (pending extensions)."
+        ),
         "Indexation is zero.",
-        "Mortality exposure splits at birthdays and 1 January using actual segment days / "
-        "calendar-year days.",
+        (
+            "Mortality exposure splits at birthdays and 1 January using actual segment days / "
+            "calendar-year days."
+        ),
         "A 29 February birth date has a 1 March birthday in non-leap years.",
         "Payments are full annual-benefit instalments on scheduled dates; no first-period proration.",
-        "Each life mixes sex-specific factors in factor space; partner composition uses products "
-        "of per-life weights.",
+        (
+            "Each life mixes sex-specific factors in factor space; partner composition uses products "
+            "of per-life weights."
+        ),
         "The selected sex compositions for participant and partner are independent.",
         "Participant and partner lifetimes are independent.",
         "Partner benefit requires the participant dead and partner alive at payment time.",

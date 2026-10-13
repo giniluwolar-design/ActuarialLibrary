@@ -29,11 +29,11 @@ def constant_source(male=0.1, female=0.2):
 
 
 def regular(table=None, **kwargs):
-    defaults = dict(
-        source=table or constant_source(), participant_dob=date(1962, 1, 1),
-        valuation_date=date(2027, 1, 1), commencement_date=date(2027, 1, 2),
-        horizon=date(2028, 1, 1), frequency="annual", timing="primo",
-    )
+    defaults = {
+        "source": table or constant_source(), "participant_dob": date(1962, 1, 1),
+        "valuation_date": date(2027, 1, 1), "commencement_date": date(2027, 1, 2),
+        "horizon": date(2028, 1, 1), "frequency": "annual", "timing": "primo",
+    }
     defaults.update(kwargs)
     return calculate_annuity(**defaults)
 
@@ -100,6 +100,10 @@ class LiteralReferenceTests(unittest.TestCase):
 
 
 class SurvivalCalendarTests(unittest.TestCase):
+    def test_wrong_source_type_raises_typeerror(self):
+        with self.assertRaises(TypeError):
+            survival_trace(None, date(1962, 1, 1), date(2027, 1, 1), date(2028, 1, 1), 'male')
+
     def test_january_birth_full_year_and_boundary_without_next_cell(self):
         result = survival_trace(source([('male', 65, 2027, .1)]), date(1962, 1, 1),
                                 date(2027, 1, 1), date(2028, 1, 1), 'male')
@@ -162,14 +166,19 @@ class SurvivalCalendarTests(unittest.TestCase):
 
     def test_invalid_q_is_controlled(self):
         for q in (-.01, 1.01, float('nan'), float('inf'), 10 ** 400, True, '.1'):
-            with self.subTest(q=str(q)), self.assertRaises(ValueError):
+            error = TypeError if isinstance(q, (bool, str)) else ValueError
+            with self.subTest(q=str(q)), self.assertRaises(error):
                 source([('male', 65, 2027, q)])
 
     def test_invalid_dates_are_controlled(self):
-        for dob, val, horizon in ((date(2028, 1, 1), date(2027, 1, 1), date(2028, 1, 1)),
-                                  (date(1962, 1, 1), date(2028, 1, 1), date(2027, 1, 1)),
-                                  (datetime(1962, 1, 1), date(2027, 1, 1), date(2028, 1, 1))):
-            with self.subTest(dob=dob, val=val), self.assertRaises(ValueError):
+        # Deliberately naive: datetime values must be rejected, not coerced to DOBs.
+        naive_dob = datetime(1962, 1, 1)  # noqa: DTZ001
+        for dob, val, horizon, error in (
+            (date(2028, 1, 1), date(2027, 1, 1), date(2028, 1, 1), ValueError),
+            (date(1962, 1, 1), date(2028, 1, 1), date(2027, 1, 1), ValueError),
+            (naive_dob, date(2027, 1, 1), date(2028, 1, 1), TypeError),
+        ):
+            with self.subTest(dob=dob, val=val), self.assertRaises(error):
                 survival_trace(constant_source(), dob, val, horizon, 'male')
 
 
@@ -217,6 +226,14 @@ class PaymentScheduleTests(unittest.TestCase):
 
 
 class FactorEvidenceTests(unittest.TestCase):
+    def test_wrong_source_and_calendar_input_types_raise_typeerror(self):
+        with self.assertRaises(TypeError):
+            calculate_annuity(None, date(1962, 1, 1), date(2027, 1, 1), date(2027, 1, 2),
+                              date(2028, 1, 1), frequency='annual', timing='primo')
+        with self.assertRaises(TypeError):
+            payment_dates('2027-01-01', date(2027, 1, 2), date(2028, 1, 1),
+                          frequency='annual', timing='primo')
+
     def test_daily_reference_for_two_birthdays_year_boundaries_and_leap_year(self):
         cells = [('male' if sex == 0 else 'female', age, year,
                   .01 + .002 * (age - 60) + .003 * (year - 2027) + .002 * sex)
@@ -358,10 +375,12 @@ class FactorEvidenceTests(unittest.TestCase):
 
     def test_weights_and_discount_values_require_finite_numbers(self):
         for weight in (-.1, 1.1, float('nan'), float('inf'), 10 ** 400, True):
-            with self.subTest(weight=str(weight)), self.assertRaises(ValueError):
+            error = TypeError if isinstance(weight, bool) else ValueError
+            with self.subTest(weight=str(weight)), self.assertRaises(error):
                 regular(participant_sex_weights=(('male', weight), ('female', 1)))
         for df in (-1, float('nan'), float('inf'), 10 ** 400, True):
-            with self.subTest(df=str(df)), self.assertRaises(ValueError):
+            error = TypeError if isinstance(df, bool) else ValueError
+            with self.subTest(df=str(df)), self.assertRaises(error):
                 discount_fixture(date(2027, 1, 1), 'synthetic-invalid', ((date(2028, 1, 1), df),))
 
     def test_input_and_returned_traces_are_immutable_snapshots(self):

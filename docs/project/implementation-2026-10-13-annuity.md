@@ -1,5 +1,11 @@
 # Synthetic calendar annuity milestone — 13 October 2026
 
+## Lead-requested lint repair
+
+Follow-up to published head `7e8706865fe8567832d0b60caa4ec37877903299`: addressed all 11 reported sites in owned files. Existing `discounting.py` uses `TypeError` for invalid date/provenance/numeric types. The six reported invalid-type guards now follow that convention; invalid numeric values/ranges/nonfinite numbers/conversion overflow remain `ValueError`. Negative tests retain rejection assertions with explicit exception types and add source/date seam checks. Three assumption-string concatenations parenthesized, test dict constructor replaced by literal, intentionally naive datetime fixture retained with one documented `# noqa: DTZ001`. No lint configuration or numerical arithmetic changed.
+
+38 isolated module tests pass after repair; syntax compilation and diff-whitespace checks pass. Ruff is still absent here, so the 11 reported sites are repaired by inspection, not a claimed fresh Ruff pass. Lead's initial full-suite collection was blocked by sandbox writes, not a demonstrated source defect; its rerun with synthetic temporary storage/cache disabled is pending externally. Exact lead command: `.venv/bin/python -m ruff check --no-cache src/actuarial_library/mortality.py src/actuarial_library/annuity.py tests/test_synthetic_annuity_v2.py`. Lead's read-only visual gallery is separate draft PR #15, requiring founder preference before integration.
+
 ## Decided
 
 Independent bounded implementation from corrected `annuity-factors-spec-v2.md`. Reviewed base: `414ef6ae83be9c5e9c4f0d0b5b071bac2ae56041`; source tree `87ce51f6fce01b1a8ec33ad98ecb0fcf3411adfc`. Separate branch `codex/synthetic-annuity-calendar-v2`. A cheaper Codex worker implemented two modules; the coordinating agent read/reviewed them, authored independent regressions and directed corrections. Root lead retains acceptance/integration review.
